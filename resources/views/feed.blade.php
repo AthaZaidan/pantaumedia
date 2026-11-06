@@ -366,58 +366,104 @@
 
 @section('scripts')
 <script>
-    function injectLiveHumanPost() {
-        const container = document.getElementById('humanFeedScroll');
-        const card = document.createElement('article');
-        card.className = 'post-item-card';
-        card.style.borderColor = 'var(--color-teal)';
-        card.innerHTML = `
-            <div class="post-item-top">
-                <div>
-                    <a href="{{ route('accounts', ['handle' => '@rizalfauzi_econ']) }}" class="post-author-link">Warga Lapangan (Live)</a>
-                    <span class="post-handle-text tabular">@suara_warga_live &middot; Baru saja</span>
+    async function injectLiveHumanPost() {
+        try {
+            const res = await fetch("{{ route('ingest.post') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    issue_slug: "{{ $issue['slug'] }}",
+                    platform: "{{ $platformKey }}",
+                    author_name: 'Warga Lapangan (Live)',
+                    author_handle: '@suara_warga_live',
+                    force_bot: false,
+                    content: "[LIVE STREAM] Laporan langsung warga terkait {{ $issue['title'] }} di {{ $platform['name'] }}: mohon pengawasan kualitas dan transparansi anggaran di tingkat kelurahan diperketat."
+                })
+            });
+            const data = await res.json();
+            const p = data.post;
+
+            const container = document.getElementById('humanFeedScroll');
+            const card = document.createElement('article');
+            card.className = 'post-item-card';
+            card.style.borderColor = 'var(--color-teal)';
+            card.innerHTML = `
+                <div class="post-item-top">
+                    <div>
+                        <a href="{{ route('accounts', ['handle' => '@rizalfauzi_econ']) }}" class="post-author-link">${p.author}</a>
+                        <span class="post-handle-text tabular">${p.handle} &middot; ${p.time}</span>
+                    </div>
+                    <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
+                        <span style="color: var(--color-teal-dark);">Orang (${p.human_score}%)</span>
+                        <span style="color: var(--color-text-muted);">&middot;</span>
+                        <span style="color: var(--color-red-dark);">- Negatif (${p.sentiment_conf}%)</span>
+                    </div>
                 </div>
-                <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
-                    <span style="color: var(--color-teal-dark);">Orang (96.2%)</span>
-                    <span style="color: var(--color-text-muted);">&middot;</span>
-                    <span style="color: var(--color-red-dark);">- Negatif (91.4%)</span>
+                <p class="post-body-text">${p.text}</p>
+                <div class="post-item-footer tabular">
+                    <span>${p.likes} suka &middot; ${p.reposts} repost</span>
+                    <a href="${p.url}" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
                 </div>
-            </div>
-            <p class="post-body-text">[LIVE STREAM] Laporan langsung warga terkait {{ $issue['title'] }} di {{ $platform['name'] }}: mohon pengawasan kualitas di tingkat kelurahan diperketat.</p>
-            <div class="post-item-footer tabular">
-                <span>1 suka &middot; 0 repost</span>
-                <a href="https://x.com" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
-            </div>
-        `;
-        container.insertBefore(card, container.firstChild);
-        showToast("1 postingan warga organik masuk di kolom kiri");
+            `;
+            container.insertBefore(card, container.firstChild);
+            showToast("Postingan warga dianalisis & disimpan ke PostgreSQL (#" + p.id + ")");
+        } catch (e) {
+            showToast("Gagal menyimpan postingan");
+        }
     }
 
-    function injectLiveBotPost() {
-        const container = document.getElementById('botFeedScroll');
-        const card = document.createElement('article');
-        card.className = 'post-item-card';
-        card.style.borderColor = 'var(--color-red)';
-        card.innerHTML = `
-            <div class="post-item-top">
-                <div>
-                    <a href="{{ route('accounts', ['handle' => '@sahabat_negeri77']) }}" class="post-author-link">Bot Amplifier #409</a>
-                    <span class="post-handle-text tabular">@bot_cluster_409 &middot; Baru saja</span>
+    async function injectLiveBotPost() {
+        try {
+            const res = await fetch("{{ route('ingest.post') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    issue_slug: "{{ $issue['slug'] }}",
+                    platform: "{{ $platformKey }}",
+                    author_name: 'Bot Amplifier #409',
+                    author_handle: '@sahabat_negeri77',
+                    force_bot: true,
+                    content: "[LIVE STREAM] Dukungan penuh 100% untuk {{ $issue['title'] }}! Solusi sukses menuju Indonesia Maju! #SukseskanProgramNasional #IndonesiaEmas"
+                })
+            });
+            const data = await res.json();
+            const p = data.post;
+
+            const container = document.getElementById('botFeedScroll');
+            const card = document.createElement('article');
+            card.className = 'post-item-card';
+            card.style.borderColor = 'var(--color-red)';
+            card.innerHTML = `
+                <div class="post-item-top">
+                    <div>
+                        <a href="{{ route('accounts', ['handle' => '@sahabat_negeri77']) }}" class="post-author-link">${p.author}</a>
+                        <span class="post-handle-text tabular">${p.handle} &middot; ${p.time}</span>
+                    </div>
+                    <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
+                        <span style="color: var(--color-text-secondary);">Bot (${p.bot_score}%)</span>
+                        <span style="color: var(--color-text-muted);">&middot;</span>
+                        <span style="color: var(--color-teal-dark);">+ Positif (${p.sentiment_conf}%)</span>
+                    </div>
                 </div>
-                <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
-                    <span style="color: var(--color-text-secondary);">Bot (97.8%)</span>
-                    <span style="color: var(--color-text-muted);">&middot;</span>
-                    <span style="color: var(--color-teal-dark);">+ Positif (98.9%)</span>
+                <p class="post-body-text">${p.text}</p>
+                <div class="post-item-footer tabular">
+                    <span>${p.likes} suka &middot; ${p.reposts} repost</span>
+                    <a href="${p.url}" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
                 </div>
-            </div>
-            <p class="post-body-text">[LIVE STREAM] Dukungan penuh 100% untuk {{ $issue['title'] }}! Bersama menuju Indonesia Maju! #SukseskanProgramNasional</p>
-            <div class="post-item-footer tabular">
-                <span>120 suka &middot; 85 repost</span>
-                <a href="https://x.com" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
-            </div>
-        `;
-        container.insertBefore(card, container.firstChild);
-        showToast("1 postingan jaringan bot masuk di kolom kanan");
+            `;
+            container.insertBefore(card, container.firstChild);
+            showToast("Postingan bot dianalisis & disimpan ke PostgreSQL (#" + p.id + ")");
+        } catch (e) {
+            showToast("Gagal menyimpan postingan");
+        }
     }
 </script>
 @endsection

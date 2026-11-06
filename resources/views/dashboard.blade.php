@@ -688,11 +688,33 @@
         btn.classList.add('is-active');
     }
 
-    function simulateIngest() {
-        showToast("Data baru diterima via stream websocket");
-        const el = document.getElementById('kpiTotalSampel');
-        let n = parseInt(el.innerText.replace(/\./g, '')) + 1;
-        el.innerText = n.toLocaleString('id-ID');
+    async function simulateIngest() {
+        try {
+            const res = await fetch("{{ route('ingest.post') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    issue_slug: 'makan-bergizi-gratis',
+                    platform: 'x',
+                    author_name: 'Warga Pemantau (Live)',
+                    author_handle: '@warga_pantau_id',
+                    content: 'Evaluasi lapangan pelaksanaan Makan Bergizi Gratis hari ini berjalan lancar, mohon kualitas distribusi tetap diawasi.'
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                const el = document.getElementById('kpiTotalSampel');
+                let n = parseInt(el.innerText.replace(/\./g, '')) + 1;
+                el.innerText = n.toLocaleString('id-ID');
+                showToast("Tersimpan ke PostgreSQL (ID #" + data.post.id + ")");
+            }
+        } catch (e) {
+            showToast("Gagal menyimpan stream");
+        }
     }
 
     function filterIssues() {
