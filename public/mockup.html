@@ -1,0 +1,1506 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SOSPEM — Executive Monitoring &amp; Bot Intelligence</title>
+
+    <!-- Font: Inter (Standar Emas Desain UI Modern & Bersih) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <!-- Standalone browser fallback -->
+
+    <style>
+        /* DESIGN SYSTEM: Human-Centered, Executive Master-Detail Theme */
+        :root {
+            --bg-canvas: #f8fafc;
+            --bg-card: #ffffff;
+            --border-card: #e2e8f0;
+            --border-focus: #cbd5e1;
+            --text-lead: #0f172a;
+            --text-body: #334155;
+            --text-muted: #64748b;
+            --human-teal: #0d9488;
+            --human-teal-light: #ccfbf1;
+            --bot-coral: #e11d48;
+            --bot-coral-light: #ffe4e6;
+            --accent-brand: #2563eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-canvas);
+            color: var(--text-body);
+            min-height: 100vh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Top Bar */
+        .masthead-nav {
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--border-card);
+            padding: 14px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand-cluster {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-badge {
+            background-color: #0f172a;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            letter-spacing: 0.05em;
+        }
+
+        .stream-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #0d9488;
+            background-color: #f0fdfa;
+            border: 1px solid #99f6e4;
+            padding: 4px 10px;
+            border-radius: 9999px;
+        }
+
+        .stream-dot {
+            width: 7px;
+            height: 7px;
+            background-color: #0d9488;
+            border-radius: 50%;
+        }
+
+        .top-action-btn {
+            font-size: 12.5px;
+            font-weight: 600;
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background-color: #ffffff;
+            color: var(--text-lead);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }
+        .top-action-btn:hover {
+            border-color: var(--border-focus);
+            background-color: #f1f5f9;
+        }
+
+        .top-action-btn.primary {
+            background-color: #0f172a;
+            color: #ffffff;
+            border-color: #0f172a;
+        }
+        .top-action-btn.primary:hover {
+            background-color: #334155;
+        }
+
+        /* Workspace Wrap */
+        .workspace-body {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 24px 32px 60px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 1. KPI Metric Cards dengan padding lega & soft shadow */
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        @media (max-width: 1024px) {
+            .kpi-row { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 640px) {
+            .kpi-row { grid-template-columns: 1fr; }
+        }
+
+        .metric-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            padding: 18px 22px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            position: relative;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .metric-value {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text-lead);
+            letter-spacing: -0.02em;
+            margin: 2px 0;
+        }
+
+        .metric-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* 2. Toolbar & View Switcher */
+        .toolbar-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-input-wrap {
+            position: relative;
+            width: 320px;
+        }
+        .search-input {
+            width: 100%;
+            padding: 8px 14px 8px 34px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background-color: #ffffff;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+        .search-input:focus {
+            border-color: #0f172a;
+        }
+        .search-icon {
+            position: absolute;
+            left: 11px;
+            top: 10px;
+            color: #94a3b8;
+        }
+
+        .view-switcher-group {
+            display: flex;
+            background-color: #e2e8f0;
+            padding: 3px;
+            border-radius: 8px;
+            gap: 2px;
+        }
+
+        .switch-btn {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            color: var(--text-muted);
+            background: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+        }
+        .switch-btn.active {
+            background-color: #ffffff;
+            color: var(--text-lead);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+        }
+
+        /* 3. Master-Detail Issue Cards (Spacious, Clean, Human-Friendly) */
+        .issues-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .issue-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            overflow: hidden;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .issue-card:hover {
+            border-color: var(--border-focus);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        .issue-card.highlight-lead {
+            border-color: #cbd5e1;
+            background: linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+        }
+
+        /* Card Master Row */
+        .issue-master-row {
+            padding: 18px 22px;
+            display: grid;
+            grid-template-columns: 42px 1fr 220px 240px 140px;
+            align-items: center;
+            gap: 20px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        @media (max-width: 1024px) {
+            .issue-master-row {
+                grid-template-columns: 36px 1fr auto;
+                gap: 12px;
+            }
+            .hide-tablet { display: none !important; }
+        }
+
+        .rank-circle {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background-color: #f1f5f9;
+            color: var(--text-lead);
+            font-size: 13px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .issue-card.highlight-lead .rank-circle {
+            background-color: #0f172a;
+            color: #ffffff;
+        }
+
+        .issue-info {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .issue-title-text {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-lead);
+            letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .issue-meta-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* Pill status badges transparan 10% */
+        .pill-badge {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            letter-spacing: 0.02em;
+        }
+        .pill-badge.up {
+            background-color: rgba(225, 29, 72, 0.1);
+            color: var(--bot-coral);
+        }
+        .pill-badge.flat {
+            background-color: rgba(100, 116, 139, 0.1);
+            color: #475569;
+        }
+        .pill-badge.down {
+            background-color: rgba(13, 148, 136, 0.1);
+            color: var(--human-teal);
+        }
+
+        /* Stacked Pill Progress Bar (Warga Organik vs Bot) */
+        .pill-stacked-bar-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .stacked-bar-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+
+        .stacked-progress-pill {
+            height: 8px;
+            border-radius: 9999px;
+            background-color: var(--bot-coral);
+            overflow: hidden;
+            display: flex;
+            width: 100%;
+        }
+        .stacked-progress-fill {
+            background-color: var(--human-teal);
+            height: 100%;
+            border-radius: 9999px 0 0 9999px;
+        }
+
+        /* Sentimen Rasio Pill */
+        .sentiment-ratio-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .expand-toggle-btn {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--accent-brand);
+        }
+        .chevron-icon {
+            transition: transform 0.2s ease;
+        }
+        .issue-card.expanded .chevron-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Detail Expansion Drawer (Terbuka saat kartu diklik) */
+        .issue-detail-drawer {
+            display: none;
+            border-top: 1px solid var(--border-card);
+            background-color: #fafbfc;
+            padding: 20px 24px;
+        }
+        .issue-card.expanded .issue-detail-drawer {
+            display: block;
+        }
+
+        .platform-grid-detail {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        @media (max-width: 860px) {
+            .platform-grid-detail { grid-template-columns: 1fr; }
+        }
+
+        .platform-sub-card {
+            background-color: #ffffff;
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .platform-sub-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--text-lead);
+            padding-bottom: 6px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .actor-drill-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+        }
+        .actor-drill-row:hover {
+            background-color: #f1f5f9;
+        }
+
+        .actor-tag {
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .actor-tag.human { color: var(--human-teal); }
+        .actor-tag.bot { color: var(--bot-coral); }
+
+        .sentiment-split-pills {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11.5px;
+            font-weight: 700;
+        }
+
+        /* Slide-Over Feed Inspector */
+        .drill-slide-layer {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(2px);
+            z-index: 1000;
+            display: none;
+            justify-content: flex-end;
+        }
+        .drill-slide-layer.active {
+            display: flex;
+        }
+
+        .drill-panel-wrap {
+            background-color: #ffffff;
+            width: 100%;
+            max-width: 640px;
+            height: 100vh;
+            border-left: 1px solid var(--border-card);
+            box-shadow: -8px 0 30px rgba(0, 0, 0, 0.12);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .drill-head-box {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border-card);
+            background-color: #f8fafc;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+
+        .drill-feed-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            background-color: #f8fafc;
+        }
+
+        .feed-post-card {
+            background-color: #ffffff;
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+            transition: all 0.15s ease;
+        }
+        .feed-post-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-color: var(--border-focus);
+        }
+
+        /* Modal Profil Jaringan Akun (UU PDP) */
+        .profile-modal-layer {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(2px);
+            z-index: 1200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .profile-modal-layer.active {
+            display: flex;
+        }
+
+        .profile-card-box {
+            background-color: #ffffff;
+            border-radius: 12px;
+            border: 1px solid var(--border-card);
+            width: 100%;
+            max-width: 600px;
+            max-height: 88vh;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Toast Strip */
+        .modern-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background-color: #0f172a;
+            color: #ffffff;
+            padding: 12px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            display: none;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            z-index: 2000;
+        }
+        .modern-toast.active { display: flex; align-items: center; gap: 8px; }
+    </style>
+</head>
+<body>
+
+    <!-- 1. TOP MASTHEAD BAR -->
+    <header class="masthead-nav">
+        <div class="brand-cluster">
+            <span class="brand-badge">SOSPEM</span>
+            <div>
+                <div style="font-size: 14px; font-weight: 700; color: #0f172a;">Pemantauan Opini Publik &amp; Jaringan Bot</div>
+                <div style="font-size: 11.5px; color: #64748b;">Dashboard Analisis Sentimen &bull; Kamis, 5 November 2026</div>
+            </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="stream-pill">
+                <span class="stream-dot"></span>
+                <span>Live Stream Aktif</span>
+            </div>
+            <button class="top-action-btn" onclick="openAnalyticsModal()">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                Grafik Analisis
+            </button>
+            <button class="top-action-btn primary" onclick="simulateIncomingPost()">
+                + Simulasi Post Live
+            </button>
+        </div>
+    </header>
+
+    <div class="workspace-body">
+
+        <!-- 2. EXECUTIVE OVERVIEW: KPI SUMMARY CARDS (Bernapas & Clean) -->
+        <section class="kpi-row">
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span>Total Sampel Terproses</span>
+                    <span class="mono" style="font-size: 11px;">24 Jam</span>
+                </div>
+                <div class="metric-value mono" id="totalPostsVal">68.492</div>
+                <div class="metric-hint">
+                    <span style="color: var(--human-teal); font-weight: 700;">&uarr; +142/mnt</span> laju ingestion rata-rata
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span>Aktivitas Anomali Bot</span>
+                    <span class="pill-badge up">Terdeteksi AI</span>
+                </div>
+                <div class="metric-value mono" style="color: var(--bot-coral);">38,4%</div>
+                <div class="metric-hint">
+                    <span class="mono">26.301 post</span> terkoordinasi (astroturfing)
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span>Sentimen Warga Asli (Organik)</span>
+                    <span class="pill-badge down">Human Murni</span>
+                </div>
+                <div class="metric-value mono">
+                    <span style="color: var(--human-teal);">31,4%</span>
+                    <span style="color: #94a3b8; font-weight: 400; font-size: 20px;">/</span>
+                    <span style="color: var(--bot-coral);">68,6%</span>
+                </div>
+                <div class="metric-hint">
+                    Opini publik dominan kritis terhadap eksekusi lapangan
+                </div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span>Isu Lonjakan Tertinggi</span>
+                    <span style="color: #d97706; font-size: 11px; font-weight: 700;">Trending #1</span>
+                </div>
+                <div class="metric-value" style="font-size: 19px; color: #d97706;">Makan Bergizi Gratis</div>
+                <div class="metric-hint">
+                    Volume naik <strong class="mono" style="color: #0f172a;">+42,8%</strong> dalam 3 jam terakhir
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. TOOLBAR: Pencarian, Filter & Switcher Tampilan -->
+        <section class="toolbar-strip">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="search-input-wrap">
+                    <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" class="search-input" placeholder="Cari nama isu atau kata kunci..." id="searchBox" onkeyup="filterIssueCards()">
+                </div>
+                <div style="font-size: 12.5px; color: var(--text-muted);">
+                    Menampilkan 10 Isu Utama Terpantau (Peringkat Berdasarkan Volume 24 Jam)
+                </div>
+            </div>
+
+            <div class="view-switcher-group">
+                <button class="switch-btn active" id="btnViewCards" onclick="switchView('cards')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    Master Cards
+                </button>
+                <button class="switch-btn" id="btnViewCompact" onclick="switchView('compact')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                    Compact View
+                </button>
+            </div>
+        </section>
+
+        <!-- 4. MASTER-DETAIL ISSUES LIST (Struktur Card-Based Table dengan Padding Lega) -->
+        <main class="issues-container" id="issuesListContainer">
+
+            <!-- KARTU ISU #1 (LEAD) -->
+            <article class="issue-card highlight-lead expanded" data-title="makan bergizi gratis mbg">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">01</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text">
+                            <span>Makan Bergizi Gratis (MBG)</span>
+                            <span class="pill-badge up">▲ Naik Cepat</span>
+                        </div>
+                        <div class="issue-meta-text">
+                            <span class="mono">32.840 postingan</span> &bull;
+                            <span>Isu Strategis Nasional</span> &bull;
+                            <span>Dominan di X &amp; Meta</span>
+                        </div>
+                    </div>
+
+                    <!-- Bot Anomaly Indicator di tingkat isu -->
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">Warga (61.6%)</span>
+                            <span style="color: var(--bot-coral);">Bot (38.4%)</span>
+                        </div>
+                        <div class="stacked-progress-pill">
+                            <div class="stacked-progress-fill" style="width: 61.6%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sentimen Rasio Warga -->
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">+31.4% Positif</span>
+                            <span style="color: var(--bot-coral);">68.6% Negatif -</span>
+                        </div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);">
+                            <div class="stacked-progress-fill" style="width: 31.4%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="expand-toggle-btn">
+                        <span>Rincian</span>
+                        <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                </div>
+
+                <!-- Expansion Detail Drawer (Rincian per Platform) -->
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <!-- META -->
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head">
+                                <span>Meta (Instagram &amp; FB)</span>
+                                <span class="mono" style="color: #64748b;">23.4k post</span>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'Meta (IG & FB)', 'human', 'negative', 41.8)">
+                                <span class="actor-tag human">&bull; Warga Organik</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+58.2%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">41.8% -</span>
+                                </div>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'Meta (IG & FB)', 'bot', 'positive', 89.4)">
+                                <span class="actor-tag bot">&bull; Jaringan Bot</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+89.4%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">10.6% -</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- X / THREADS -->
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head">
+                                <span>X (Twitter) &amp; Threads</span>
+                                <span class="mono" style="color: #64748b;">31.2k post</span>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'X / Threads', 'human', 'negative', 68.6)">
+                                <span class="actor-tag human">&bull; Warga Organik</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+31.4%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">68.6% -</span>
+                                </div>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'X / Threads', 'bot', 'positive', 84.1)">
+                                <span class="actor-tag bot">&bull; Jaringan Bot</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+84.1%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">15.9% -</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- TIKTOK / YOUTUBE -->
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head">
+                                <span>TikTok &amp; YouTube</span>
+                                <span class="mono" style="color: #64748b;">13.8k post</span>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'TikTok / YouTube', 'human', 'positive', 62.5)">
+                                <span class="actor-tag human">&bull; Warga Organik</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+62.5%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">37.5% -</span>
+                                </div>
+                            </div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Makan Bergizi Gratis (MBG)', 'TikTok / YouTube', 'bot', 'positive', 91.2)">
+                                <span class="actor-tag bot">&bull; Jaringan Bot</span>
+                                <div class="sentiment-split-pills mono">
+                                    <span style="color: var(--human-teal);">+91.2%</span>
+                                    <span style="color: #cbd5e1;">/</span>
+                                    <span style="color: var(--bot-coral);">8.8% -</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- KARTU ISU #2 -->
+            <article class="issue-card" data-title="kabur aja dulu">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">02</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text">
+                            <span>kabur aja dulu</span>
+                            <span class="pill-badge down">▼ Turun</span>
+                        </div>
+                        <div class="issue-meta-text">
+                            <span class="mono">18.420 postingan</span> &bull;
+                            <span>Isu Ketenagakerjaan &amp; Pajak</span> &bull;
+                            <span>Dominan Gen-Z di X</span>
+                        </div>
+                    </div>
+
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">Warga (78.2%)</span>
+                            <span style="color: var(--bot-coral);">Bot (21.8%)</span>
+                        </div>
+                        <div class="stacked-progress-pill">
+                            <div class="stacked-progress-fill" style="width: 78.2%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">+14.3% Positif</span>
+                            <span style="color: var(--bot-coral);">85.7% Negatif -</span>
+                        </div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);">
+                            <div class="stacked-progress-fill" style="width: 14.3%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="expand-toggle-btn">
+                        <span>Rincian</span>
+                        <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                </div>
+
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>Meta (IG / FB)</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('kabur aja dulu', 'Meta (IG & FB)', 'human', 'negative', 74.8)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+25.2%</span><span style="color: var(--bot-coral);">74.8% -</span></div>
+                            </div>
+                        </div>
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>X / Threads</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('kabur aja dulu', 'X / Threads', 'human', 'negative', 85.7)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+14.3%</span><span style="color: var(--bot-coral);">85.7% -</span></div>
+                            </div>
+                        </div>
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>TikTok / YouTube</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('kabur aja dulu', 'TikTok / YouTube', 'human', 'negative', 70.3)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+29.7%</span><span style="color: var(--bot-coral);">70.3% -</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- KARTU ISU #3 -->
+            <article class="issue-card" data-title="gas alam">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">03</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text">
+                            <span>gas alam</span>
+                            <span class="pill-badge up">▲ Naik</span>
+                        </div>
+                        <div class="issue-meta-text">
+                            <span class="mono">14.180 postingan</span> &bull;
+                            <span>Pasokan &amp; Elpiji 3kg</span> &bull;
+                            <span>Keluhan Warga Pangkalan</span>
+                        </div>
+                    </div>
+
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">Warga (68.4%)</span>
+                            <span style="color: var(--bot-coral);">Bot (31.6%)</span>
+                        </div>
+                        <div class="stacked-progress-pill">
+                            <div class="stacked-progress-fill" style="width: 68.4%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels">
+                            <span style="color: var(--human-teal);">+21.1% Positif</span>
+                            <span style="color: var(--bot-coral);">78.9% Negatif -</span>
+                        </div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);">
+                            <div class="stacked-progress-fill" style="width: 21.1%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="expand-toggle-btn">
+                        <span>Rincian</span>
+                        <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
+                </div>
+
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>Meta (IG / FB)</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('gas alam', 'Meta (IG & FB)', 'human', 'negative', 65.8)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+34.2%</span><span style="color: var(--bot-coral);">65.8% -</span></div>
+                            </div>
+                        </div>
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>X / Threads</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('gas alam', 'X / Threads', 'human', 'negative', 78.9)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+21.1%</span><span style="color: var(--bot-coral);">78.9% -</span></div>
+                            </div>
+                        </div>
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>TikTok / YouTube</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('gas alam', 'TikTok / YouTube', 'human', 'negative', 72.1)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+27.9%</span><span style="color: var(--bot-coral);">72.1% -</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- KARTU ISU #4 -->
+            <article class="issue-card" data-title="karhutla">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">04</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text">
+                            <span>Karhutla</span>
+                            <span class="pill-badge up">▲ Naik</span>
+                        </div>
+                        <div class="issue-meta-text">
+                            <span class="mono">8.940 postingan</span> &bull;
+                            <span>Titik Api Riau &amp; Jambi</span> &bull;
+                            <span>Kedaruratan Udara</span>
+                        </div>
+                    </div>
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">Warga (72%)</span><span style="color: var(--bot-coral);">Bot (28%)</span></div>
+                        <div class="stacked-progress-pill"><div class="stacked-progress-fill" style="width: 72%;"></div></div>
+                    </div>
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">+7.6%</span><span style="color: var(--bot-coral);">92.4% -</span></div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);"><div class="stacked-progress-fill" style="width: 7.6%;"></div></div>
+                    </div>
+                    <div class="expand-toggle-btn"><span>Rincian</span><svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></div>
+                </div>
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>X / Threads</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('Karhutla', 'X / Threads', 'human', 'negative', 92.4)">
+                                <span class="actor-tag human">&bull; Warga Organik</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+7.6%</span><span style="color: var(--bot-coral);">92.4% -</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- KARTU ISU #5 -->
+            <article class="issue-card" data-title="kopdes">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">05</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text">
+                            <span>kopdes</span>
+                            <span class="pill-badge flat">━ Stabil</span>
+                        </div>
+                        <div class="issue-meta-text">
+                            <span class="mono">3.120 postingan</span> &bull;
+                            <span>Koperasi Pedesaan Pangan</span> &bull;
+                            <span>Respon Positif Petani</span>
+                        </div>
+                    </div>
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">Warga (54%)</span><span style="color: var(--bot-coral);">Bot (46%)</span></div>
+                        <div class="stacked-progress-pill"><div class="stacked-progress-fill" style="width: 54%;"></div></div>
+                    </div>
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">+63.8% Positif</span><span style="color: var(--bot-coral);">36.2% -</span></div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);"><div class="stacked-progress-fill" style="width: 63.8%;"></div></div>
+                    </div>
+                    <div class="expand-toggle-btn"><span>Rincian</span><svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></div>
+                </div>
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>Meta (IG / FB)</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('kopdes', 'Meta (IG & FB)', 'human', 'positive', 63.8)">
+                                <span class="actor-tag human">&bull; Warga Organik</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+63.8%</span><span style="color: var(--bot-coral);">36.2% -</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <!-- KARTU ISU #6-10 DIBUNGKUS DENGAN COMPACT VIEW JIKA DIPILIH -->
+            <article class="issue-card" data-title="subsidi pupuk">
+                <div class="issue-master-row" onclick="toggleCardExpand(this)">
+                    <div class="rank-circle mono">06</div>
+                    <div class="issue-info">
+                        <div class="issue-title-text"><span>subsidi pupuk</span><span class="pill-badge flat">━ Stabil</span></div>
+                        <div class="issue-meta-text"><span class="mono">2.840 postingan</span> &bull; <span>Alokasi Petani Daerah</span></div>
+                    </div>
+                    <div class="pill-stacked-bar-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">Warga (82%)</span><span style="color: var(--bot-coral);">Bot (18%)</span></div>
+                        <div class="stacked-progress-pill"><div class="stacked-progress-fill" style="width: 82%;"></div></div>
+                    </div>
+                    <div class="sentiment-ratio-wrap hide-tablet">
+                        <div class="stacked-bar-labels"><span style="color: var(--human-teal);">+26.8%</span><span style="color: var(--bot-coral);">73.2% -</span></div>
+                        <div class="stacked-progress-pill" style="background-color: var(--bot-coral);"><div class="stacked-progress-fill" style="width: 26.8%;"></div></div>
+                    </div>
+                    <div class="expand-toggle-btn"><span>Rincian</span><svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg></div>
+                </div>
+                <div class="issue-detail-drawer">
+                    <div class="platform-grid-detail">
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>X / Threads</span></div>
+                            <div class="actor-drill-row" onclick="openDrillModal('subsidi pupuk', 'X / Threads', 'human', 'negative', 73.2)">
+                                <span class="actor-tag human">&bull; Warga</span>
+                                <div class="sentiment-split-pills mono"><span style="color: var(--human-teal);">+26.8%</span><span style="color: var(--bot-coral);">73.2% -</span></div>
+                            </div>
+                        </div>
+                        <div class="platform-sub-card">
+                            <div class="platform-sub-head"><span>TikTok &bull; Sampel Rendah</span></div>
+                            <div style="font-size: 11.5px; color: #94a3b8; font-style: italic; padding: 6px;">Data belum cukup (&lt;45 post)</div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+        </main>
+    </div>
+
+    <!-- 5. SLIDE-OVER FEED INSPECTOR (DRILL-DOWN DARI PLATFORM) -->
+    <div class="drill-slide-layer" id="drillDrawer" onclick="closeDrillOnBg(event)">
+        <div class="drill-panel-wrap">
+            <div class="drill-head-box">
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em;">
+                        INSPEKSI SAMPEL FEED &bull; VERIFIKASI POSTINGAN
+                    </div>
+                    <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 2px;" id="drillHeadTitle">
+                        Makan Bergizi Gratis (MBG) &bull; X (Twitter)
+                    </div>
+                    <div style="font-size: 12.5px; color: #64748b; margin-top: 2px;" id="drillHeadSub">
+                        Segmentasi: Warga Organik &bull; Sentimen Negatif (68.6%)
+                    </div>
+                </div>
+                <button class="top-action-btn" onclick="closeDrillDrawer()">✕ Tutup</button>
+            </div>
+
+            <div style="padding: 10px 24px; background-color: #ffffff; border-bottom: 1px solid var(--border-card); display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; gap: 6px;">
+                    <button class="top-action-btn" style="padding: 3px 10px; font-size: 11.5px;" onclick="filterFeedCards('all')">Semua</button>
+                    <button class="top-action-btn" style="padding: 3px 10px; font-size: 11.5px;" onclick="filterFeedCards('positive')">Positif</button>
+                    <button class="top-action-btn primary" style="padding: 3px 10px; font-size: 11.5px;" onclick="filterFeedCards('negative')">Negatif</button>
+                </div>
+                <button class="top-action-btn primary" style="font-size: 11.5px; padding: 4px 10px;" onclick="injectLiveFeedSample()">
+                    + Uji 1 Post Baru
+                </button>
+            </div>
+
+            <div class="drill-feed-scroll" id="feedCardsList">
+                <!-- Data Post dynamically rendered -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. MODAL PROFIL AKUN & AUDIT JARINGAN (SESUAI UU PDP NO. 27/2022) -->
+    <div class="profile-modal-layer" id="profileModal" onclick="closeProfileOnBg(event)">
+        <div class="profile-card-box">
+            <div style="padding: 16px 20px; background-color: #f8fafc; border-bottom: 1px solid var(--border-card); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-weight: 800; font-size: 14px; color: #0f172a;">Audit Profil Jaringan &amp; Perilaku Akun</div>
+                <button class="top-action-btn" onclick="closeProfileModal()">✕</button>
+            </div>
+            <div style="padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+                <div style="background-color: #f0fdf4; border-left: 3px solid #0d9488; padding: 10px 12px; font-size: 12px; color: #134e4a; border-radius: 4px;">
+                    <strong>Kepatuhan UU PDP No. 27/2022:</strong> Sistem hanya memantau data publik terbuka dan berfokus pada <strong>audit anomali algoritma/jaringan bot</strong>, bukan menargetkan data pribadi warga biasa.
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--border-card); padding-bottom: 8px;">
+                    <div>
+                        <div style="font-size: 17px; font-weight: 800; color: #0f172a;" id="profName">Sahabat Kebijakan</div>
+                        <div class="mono" style="font-size: 12px; color: #64748b;" id="profHandle">@sahabat_negeri77 &bull; X (Twitter)</div>
+                    </div>
+                    <span class="pill-badge up mono" style="font-size: 12px;" id="profBotScore">Skor Bot: 96,4%</span>
+                </div>
+
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 6px; color: #0f172a;">Indikasi Perilaku Jaringan (Astroturfing):</div>
+                    <ul style="margin-left: 18px; line-height: 1.5; font-size: 12px; color: #334155;">
+                        <li><strong>Teks Kembar:</strong> Mengirimkan template teks 98% identik dengan 24 akun lain dalam rentang 90 detik.</li>
+                        <li><strong>Kecepatan Postingan:</strong> Frekuensi mencapai 14 tweet/menit saat kampanye narasi.</li>
+                        <li><strong>Metadata Anomali:</strong> Akun baru berusia 34 hari dengan 1.890 following vs 11 follower.</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 6px; color: #0f172a;">Akun Lain dalam Kluster Koordinasi Serupa:</div>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <span class="pill-badge flat mono">@rakyat_bersatu_id</span>
+                        <span class="pill-badge flat mono">@indonesia_maju2026</span>
+                        <span class="pill-badge flat mono">@fakta_bicara24</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. MODAL GRAFIK DERET WAKTU -->
+    <div class="profile-modal-layer" id="analyticsModal" onclick="closeAnalyticsOnBg(event)">
+        <div class="profile-card-box" style="max-width: 880px;">
+            <div style="padding: 16px 20px; background-color: #f8fafc; border-bottom: 1px solid var(--border-card); display: flex; justify-content: space-between; align-items: center;">
+                <div style="font-weight: 800; font-size: 14px; color: #0f172a;">Grafik Deret Waktu &amp; Analisis Puncak Lonjakan</div>
+                <button class="top-action-btn" onclick="closeAnalyticsModal()">✕</button>
+            </div>
+            <div style="padding: 20px; overflow-y: auto;">
+                <div style="margin-bottom: 20px;">
+                    <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 6px;">Volume Postingan per Jam (MBG vs Anomali Bot)</div>
+                    <div style="height: 220px;"><canvas id="chartLineVolume"></canvas></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 6px;">Proporsi Platform Terpantau</div>
+                        <div style="height: 180px;"><canvas id="chartDoughnutPlatform"></canvas></div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12.5px; font-weight: 700; margin-bottom: 6px;">Rasio Sentimen Warga vs Bot</div>
+                        <div style="height: 180px;"><canvas id="chartBarCompare"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8. TOAST NOTIFIKASI -->
+    <div class="modern-toast" id="toastBox">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span id="toastMsg">Postingan live baru berhasil diterima!</span>
+    </div>
+
+    <!-- JAVASCRIPT & MICRO-INTERACTIONS -->
+    <script>
+        // Data realistis sampel postingan
+        const repository = {
+            'Makan Bergizi Gratis (MBG)': {
+                'X / Threads': {
+                    'human': {
+                        'negative': [
+                            {
+                                author: "Rizal Fauzi",
+                                handle: "@rizalfauzi_econ",
+                                platform: "X",
+                                time: "3 mnt lalu",
+                                isBot: false,
+                                botScore: 4.2,
+                                sentiment: "negative",
+                                text: "Anggaran MBG tembus ratusan triliun per tahun, tapi pos riset kampus malah kena efisiensi. Skala prioritas fiskal kita perlu diaudit transparan.",
+                                likes: 2410,
+                                reposts: 780,
+                                url: "https://x.com"
+                            },
+                            {
+                                author: "Nadia Amalia",
+                                handle: "@nadiamalia",
+                                platform: "X",
+                                time: "8 mnt lalu",
+                                isBot: false,
+                                botScore: 8.1,
+                                sentiment: "negative",
+                                text: "Tadi dapat kiriman foto menu MBG di salah satu SDN kabupaten: porsinya cuma nasi sedikit sama tempe orek satu iris. Padahal alokasinya Rp 15rb/anak. Pengawasannya di mana?",
+                                likes: 4190,
+                                reposts: 1620,
+                                url: "https://x.com"
+                            }
+                        ],
+                        'positive': [
+                            {
+                                author: "dr. Tirta Sari, Sp.GK",
+                                handle: "@gizi_keluarga",
+                                platform: "X",
+                                time: "15 mnt lalu",
+                                isBot: false,
+                                botScore: 3.5,
+                                sentiment: "positive",
+                                text: "Secara konsep gizi klinis, intervensi protein hewani harian lewat MBG ini terbukti ilmiah menekan stunting asalkan gramasi mikronutriennya dipantau ketat.",
+                                likes: 820,
+                                reposts: 190,
+                                url: "https://x.com"
+                            }
+                        ]
+                    },
+                    'bot': {
+                        'positive': [
+                            {
+                                author: "Sahabat Kebijakan",
+                                handle: "@sahabat_negeri77",
+                                platform: "X",
+                                isBot: true,
+                                botScore: 96.4,
+                                sentiment: "positive",
+                                text: "Makan Bergizi Gratis (MBG) adalah investasi peradaban terbesar bangsa! Anak Indonesia siap menyongsong Indonesia Emas 2045! 🇮🇩✨ #MBGUntukBangsa #GenerasiSehat",
+                                likes: 4120,
+                                reposts: 2500,
+                                url: "https://x.com"
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+
+        let currentDrillContext = {
+            topic: 'Makan Bergizi Gratis (MBG)',
+            platform: 'X / Threads',
+            actor: 'human',
+            sentiment: 'negative',
+            pct: 68.6
+        };
+
+        // Toggle Expand Card
+        function toggleCardExpand(rowElement) {
+            const card = rowElement.closest('.issue-card');
+            card.classList.toggle('expanded');
+        }
+
+        // Open Drill Drawer
+        function openDrillModal(topic, platform, actor, sentiment, pct) {
+            currentDrillContext = { topic, platform, actor, sentiment, pct };
+
+            const actorLabel = actor === 'bot' ? 'Jaringan Bot (Buzzer)' : 'Warga Organik';
+            const sentimentLabel = sentiment === 'positive' ? 'Sentimen Positif' : 'Sentimen Negatif';
+
+            document.getElementById('drillHeadTitle').innerText = `${topic} • ${platform}`;
+            document.getElementById('drillHeadSub').innerText = `Segmentasi: ${actorLabel} • ${sentimentLabel} (${pct}%)`;
+
+            renderDrillFeed(sentiment);
+            document.getElementById('drillDrawer').classList.add('active');
+        }
+
+        function renderDrillFeed(filter = 'all') {
+            const container = document.getElementById('feedCardsList');
+            container.innerHTML = '';
+
+            let posts = [];
+            const t = currentDrillContext.topic;
+            const p = currentDrillContext.platform;
+            const a = currentDrillContext.actor;
+
+            if (repository[t] && repository[t][p] && repository[t][p][a]) {
+                const data = repository[t][p][a];
+                if (filter === 'all') {
+                    posts = [...(data.positive || []), ...(data.negative || [])];
+                } else if (filter === 'positive') {
+                    posts = data.positive || [];
+                } else {
+                    posts = data.negative || [];
+                }
+            }
+
+            if (posts.length === 0) {
+                const isB = a === 'bot';
+                const isP = filter === 'positive';
+                posts = [
+                    {
+                        author: isB ? "Akun Bot #" + Math.floor(Math.random() * 890 + 100) : "Warga Netizen",
+                        handle: isB ? "@buzzer_amplif_" + Math.floor(Math.random() * 900) : "@suara_warga_id",
+                        platform: p,
+                        time: "4 mnt lalu",
+                        isBot: isB,
+                        botScore: isB ? 96.4 : 6.1,
+                        sentiment: isP ? 'positive' : 'negative',
+                        text: isP
+                            ? `Terkait isu ${t}, pelaksanaan di lapangan patut diapresiasi karena terbukti membantu meringankan beban masyarakat secara terukur.`
+                            : `Penyaluran dan pengawasan isu ${t} di daerah masih dikeluhkan warga. Mohon inspektorat kementerian terkait segera turun ke lapangan.`,
+                        likes: isB ? 1420 : 340,
+                        reposts: isB ? 620 : 88,
+                        url: "https://x.com"
+                    }
+                ];
+            }
+
+            posts.forEach(post => {
+                const card = document.createElement('div');
+                card.className = 'feed-post-card';
+
+                const botBadge = post.isBot
+                    ? `<span class="pill-badge up mono">Bot: ${post.botScore}%</span>`
+                    : `<span class="pill-badge down mono">Warga Asli</span>`;
+
+                const sentBadge = post.sentiment === 'positive'
+                    ? `<span style="color: var(--human-teal); font-weight: 700; font-size: 11.5px;">+ Positif</span>`
+                    : `<span style="color: var(--bot-coral); font-weight: 700; font-size: 11.5px;">- Negatif</span>`;
+
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <div>
+                            <span style="font-weight: 700; color: #0f172a; cursor: pointer; text-decoration: underline;" onclick="openProfileModal('${post.author}', '${post.handle}', ${post.botScore})">${post.author}</span>
+                            <span class="mono" style="font-size: 12px; color: #64748b;">(${post.handle} &bull; ${post.platform})</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            ${botBadge}
+                            ${sentBadge}
+                        </div>
+                    </div>
+                    <div style="font-size: 13.5px; color: #1e293b; line-height: 1.5;">${post.text}</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748b; border-top: 1px solid #f1f5f9; padding-top: 6px;">
+                        <span>❤️ ${post.likes.toLocaleString()} suka &bull; 🔁 ${post.reposts.toLocaleString()} repost &bull; ${post.time}</span>
+                        <a href="${post.url}" target="_blank" style="color: var(--accent-brand); font-weight: 600; text-decoration: none;">Buka di ${post.platform} ↗</a>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function filterFeedCards(type) {
+            renderDrillFeed(type);
+        }
+
+        function closeDrillDrawer() {
+            document.getElementById('drillDrawer').classList.remove('active');
+        }
+        function closeDrillOnBg(e) {
+            if (e.target.id === 'drillDrawer') closeDrillDrawer();
+        }
+
+        function injectLiveFeedSample() {
+            const container = document.getElementById('feedCardsList');
+            const card = document.createElement('div');
+            card.className = 'feed-post-card';
+            card.style.borderColor = '#0d9488';
+            card.style.backgroundColor = '#f0fdfa';
+
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <div>
+                        <span style="font-weight: 700; color: #0f172a;">Akun Live Masuk</span>
+                        <span class="mono" style="font-size: 12px; color: #64748b;">(@live_sample &bull; ${currentDrillContext.platform})</span>
+                    </div>
+                    <span class="pill-badge down mono">Warga Asli</span>
+                </div>
+                <div style="font-size: 13.5px; color: #1e293b; line-height: 1.5;">[DATA LIVE MASUK] Masukan warga mengenai ${currentDrillContext.topic}: menu hari ini sudah mulai ada variasi buah segar di beberapa sekolah.</div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #0d9488; border-top: 1px solid #ccfbf1; padding-top: 6px;">
+                    <span>❤️ 1 suka &bull; Baru diterima</span>
+                    <a href="https://x.com" target="_blank" style="color: var(--accent-brand); font-weight: 600;">Buka postingan asli ↗</a>
+                </div>
+            `;
+
+            container.insertBefore(card, container.firstChild);
+            showToast("1 data live baru terinjeksi ke feed!");
+            incrementCounter();
+        }
+
+        function simulateIncomingPost() {
+            showToast("Data baru diterima via stream websocket!");
+            incrementCounter();
+        }
+
+        function incrementCounter() {
+            const el = document.getElementById('totalPostsVal');
+            let n = parseInt(el.innerText.replace(/\./g, '')) + 1;
+            el.innerText = n.toLocaleString('id-ID');
+        }
+
+        function showToast(text) {
+            const t = document.getElementById('toastBox');
+            document.getElementById('toastMsg').innerText = text;
+            t.classList.add('active');
+            setTimeout(() => { t.classList.remove('active'); }, 2500);
+        }
+
+        // Account Profile Modal
+        function openProfileModal(name, handle, score) {
+            document.getElementById('profName').innerText = name;
+            document.getElementById('profHandle').innerText = `${handle} • Platform Terpantau`;
+            document.getElementById('profBotScore').innerText = `Skor Bot: ${score}%`;
+            document.getElementById('profileModal').classList.add('active');
+        }
+        function closeProfileModal() {
+            document.getElementById('profileModal').classList.remove('active');
+        }
+        function closeProfileOnBg(e) {
+            if (e.target.id === 'profileModal') closeProfileModal();
+        }
+
+        // Analytics Modal & Charts
+        let chartsBuilt = false;
+        function openAnalyticsModal() {
+            document.getElementById('analyticsModal').classList.add('active');
+            if (!chartsBuilt) {
+                initCharts();
+                chartsBuilt = true;
+            }
+        }
+        function closeAnalyticsModal() {
+            document.getElementById('analyticsModal').classList.remove('active');
+        }
+        function closeAnalyticsOnBg(e) {
+            if (e.target.id === 'analyticsModal') closeAnalyticsModal();
+        }
+
+        function initCharts() {
+            new Chart(document.getElementById('chartLineVolume'), {
+                type: 'line',
+                data: {
+                    labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00'],
+                    datasets: [
+                        { label: 'MBG (Makan Bergizi Gratis)', data: [420, 280, 1100, 4900, 7800, 6400, 7100], borderColor: '#2563eb', tension: 0.3 },
+                        { label: 'Anomali Botnet', data: [60, 40, 290, 2100, 3800, 1400, 2300], borderColor: '#e11d48', borderDash: [4, 4], tension: 0.3 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            new Chart(document.getElementById('chartDoughnutPlatform'), {
+                type: 'doughnut',
+                data: {
+                    labels: ['Meta (IG & FB)', 'X & Threads', 'TikTok & YouTube'],
+                    datasets: [{ data: [23400, 31200, 13800], backgroundColor: ['#2563eb', '#0f172a', '#e11d48'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            new Chart(document.getElementById('chartBarCompare'), {
+                type: 'bar',
+                data: {
+                    labels: ['Warga Asli', 'Jaringan Bot'],
+                    datasets: [
+                        { label: 'Positif', data: [31.4, 84.1], backgroundColor: '#0d9488' },
+                        { label: 'Negatif', data: [68.6, 15.9], backgroundColor: '#e11d48' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100 } } }
+            });
+        }
+
+        // Search Filter
+        function filterIssueCards() {
+            const q = document.getElementById('searchBox').value.toLowerCase();
+            const cards = document.querySelectorAll('#issuesListContainer .issue-card');
+            cards.forEach(c => {
+                const title = c.getAttribute('data-title') || '';
+                c.style.display = title.includes(q) ? '' : 'none';
+            });
+        }
+
+        // View Switcher
+        function switchView(type) {
+            document.getElementById('btnViewCards').classList.toggle('active', type === 'cards');
+            document.getElementById('btnViewCompact').classList.toggle('active', type === 'compact');
+
+            const cards = document.querySelectorAll('.issue-card');
+            cards.forEach(c => {
+                if (type === 'compact') {
+                    c.classList.remove('expanded');
+                    c.querySelector('.issue-master-row').style.padding = '12px 18px';
+                } else {
+                    c.querySelector('.issue-master-row').style.padding = '18px 22px';
+                }
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeDrillDrawer();
+                closeProfileModal();
+                closeAnalyticsModal();
+            }
+        });
+    </script>
+</body>
+</html>
