@@ -36,9 +36,15 @@
         justify-content: space-between;
     }
 
-    .chart-box-sub {
-        font-size: 12px;
-        color: var(--color-text-muted);
+    .filter-select-clean {
+        padding: 6px 12px;
+        font-size: 12.5px;
+        font-weight: 500;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface);
+        color: var(--color-text-primary);
+        cursor: pointer;
     }
 </style>
 @endsection
@@ -47,25 +53,45 @@
     <header class="page-title-bar">
         <h1 class="page-heading">
             <span>Grafik Analitik &amp; Deret Waktu</span>
-            <span class="page-heading-muted">&middot; Perbandingan Orang vs Bot</span>
+            <span class="page-heading-muted tabular">&middot; {{ number_format($chartData['total_analyzed'], 0, ',', '.') }} Postingan PostgreSQL</span>
         </h1>
         <div class="top-right-actions">
+            <form action="{{ route('analytics') }}" method="GET" style="display: flex; align-items: center; gap: 8px;">
+                <select name="issue" class="filter-select-clean" onchange="this.form.submit()">
+                    <option value="all" {{ $selectedSlug === 'all' ? 'selected' : '' }}>Semua Isu ({{ number_format($chartData['total_analyzed'], 0, ',', '.') }} post)</option>
+                    @foreach($issues as $iss)
+                        <option value="{{ $iss['slug'] }}" {{ $selectedSlug === $iss['slug'] ? 'selected' : '' }}>
+                            #{{ $iss['rank'] }} {{ $iss['title'] }} ({{ number_format($iss['total_posts'], 0, ',', '.') }} post)
+                        </option>
+                    @endforeach
+                </select>
+            </form>
             <a href="{{ route('dashboard') }}" class="btn-clean">&larr; Dashboard</a>
         </div>
     </header>
 
-    <!-- 1. Grafik Garis Volume Postingan per Jam & Lonjakan Puncak -->
+    <!-- 1. Grafik Garis Volume Postingan per Jam dari PostgreSQL -->
     <section class="chart-box-card">
         <div class="chart-box-title">
-            <span>Volume Postingan per Jam &amp; Titik Lonjakan Puncak (Makan Bergizi Gratis)</span>
-            <span class="status-pill is-up">▲ Naik</span>
+            <span>Volume Postingan per Jam ({{ $selectedIssue ? $selectedIssue['title'] : 'Seluruh Isu Terpantau' }})</span>
+            @if($selectedIssue)
+                @if($selectedIssue['trend'] === 'up')
+                    <span class="status-pill is-up">▲ Naik</span>
+                @elseif($selectedIssue['trend'] === 'down')
+                    <span class="status-pill is-down">▼ Turun</span>
+                @else
+                    <span class="status-pill is-stable">━ Stabil</span>
+                @endif
+            @else
+                <span class="status-pill is-up">▲ Naik</span>
+            @endif
         </div>
         <div style="height: 280px;">
             <canvas id="chartHourlyVolume"></canvas>
         </div>
     </section>
 
-    <!-- 2. Grafik Perbandingan Sentimen Orang vs Bot & Proporsi Platform -->
+    <!-- 2. Grafik Perbandingan Sentimen Orang vs Bot & Proporsi Platform dari PostgreSQL -->
     <div class="charts-grid-2col">
         <section class="chart-box-card">
             <div class="chart-box-title">Perbandingan Sentimen: Orang vs Bot</div>
@@ -89,14 +115,21 @@
     Chart.defaults.color = isLight() ? '#64748b' : '#9e9e9e';
     Chart.defaults.borderColor = isLight() ? '#e2e8f0' : '#262626';
 
+    const hourlyLabels = @json($chartData['hourly_labels']);
+    const hourlyHuman = @json($chartData['hourly_human']);
+    const hourlyBot = @json($chartData['hourly_bot']);
+    const sentimentPos = @json($chartData['sentiment_pos']);
+    const sentimentNeg = @json($chartData['sentiment_neg']);
+    const platformCounts = @json($chartData['platform_counts']);
+
     const chartHourly = new Chart(document.getElementById('chartHourlyVolume'), {
         type: 'line',
         data: {
-            labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
+            labels: hourlyLabels,
             datasets: [
                 {
                     label: 'Orang (Warga Organik)',
-                    data: [420, 280, 1100, 3900, 6200, 5400, 6800, 5100],
+                    data: hourlyHuman,
                     borderColor: '#18b26f',
                     backgroundColor: 'rgba(24, 178, 111, 0.14)',
                     fill: true,
@@ -104,7 +137,7 @@
                 },
                 {
                     label: 'Jaringan Bot (Buzzer)',
-                    data: [60, 40, 290, 2400, 4900, 1800, 3100, 2200],
+                    data: hourlyBot,
                     borderColor: '#f04438',
                     borderDash: [5, 5],
                     tension: 0.35
@@ -124,12 +157,12 @@
             datasets: [
                 {
                     label: 'Positif (%)',
-                    data: [31.4, 84.1],
+                    data: sentimentPos,
                     backgroundColor: '#18b26f'
                 },
                 {
                     label: 'Negatif (%)',
-                    data: [68.6, 15.9],
+                    data: sentimentNeg,
                     backgroundColor: '#f04438'
                 }
             ]
@@ -148,7 +181,7 @@
         data: {
             labels: ['Meta (IG & FB)', 'X & Threads', 'TikTok & YouTube'],
             datasets: [{
-                data: [23400, 31200, 13800],
+                data: platformCounts,
                 backgroundColor: ['#18b26f', '#3b82f6', '#737373'],
                 borderColor: isLight() ? '#ffffff' : '#181818',
                 borderWidth: 2
@@ -181,4 +214,3 @@
     });
 </script>
 @endsection
-

@@ -7,7 +7,9 @@ use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
 use App\Services\PostAnalyzerService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class SospemController extends Controller
@@ -20,9 +22,42 @@ class SospemController extends Controller
     private function getIssuesFromDatabase(): array
     {
         return Issue::orderBy('rank')
+            ->orderByDesc('total_posts')
             ->get()
             ->map(fn (Issue $issue): array => $this->formatIssueForView($issue))
             ->all();
+    }
+
+    /**
+     * Hitung 4 Kartu KPI Utama di bagian atas Dashboard langsung dari tabel PostgreSQL.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildKpiStats(): array
+    {
+        $totalPosts = SocialPost::count();
+        $humanPosts = SocialPost::where('is_bot', false)->count();
+        $botPosts = SocialPost::where('is_bot', true)->count();
+
+        $humanPct = $totalPosts > 0 ? round(($humanPosts / $totalPosts) * 100, 1) : 0.0;
+        $botPct = $totalPosts > 0 ? round(100 - $humanPct, 1) : 0.0;
+
+        $topIssue = Issue::orderByDesc('total_posts')->orderBy('rank')->first();
+        $topIssueTitle = $topIssue ? $topIssue->title : '-';
+        $topIssueShare = ($topIssue && $totalPosts > 0)
+            ? round(($topIssue->total_posts / $totalPosts) * 100, 1)
+            : 0.0;
+
+        return [
+            'total_posts' => $totalPosts,
+            'human_posts' => $humanPosts,
+            'bot_posts' => $botPosts,
+            'human_pct' => $humanPct,
+            'bot_pct' => $botPct,
+            'top_issue_title' => $topIssueTitle,
+            'top_issue_posts' => $topIssue ? $topIssue->total_posts : 0,
+            'top_issue_share' => $topIssueShare,
+        ];
     }
 
     /**
@@ -49,11 +84,12 @@ class SospemController extends Controller
     }
 
     /**
-     * Dashboard utama: Matriks isu x platform dari PostgreSQL.
+     * Dashboard utama: KPI & Matriks isu x platform murni dari PostgreSQL.
      */
     public function dashboard(): View
     {
         return view('dashboard', [
+            'kpi' => $this->buildKpiStats(),
             'issues' => $this->getIssuesFromDatabase(),
         ]);
     }
@@ -91,14 +127,14 @@ class SospemController extends Controller
 
         $humanPosts = (clone $baseQuery)
             ->where('is_bot', false)
-            ->limit(30)
+            ->limit(50)
             ->get()
             ->map(fn (SocialPost $p): array => $this->formatPostForView($p, $platformData['name']))
             ->all();
 
         $botPosts = (clone $baseQuery)
             ->where('is_bot', true)
-            ->limit(30)
+            ->limit(50)
             ->get()
             ->map(fn (SocialPost $p): array => $this->formatPostForView($p, $platformData['name']))
             ->all();
@@ -137,7 +173,8 @@ class SospemController extends Controller
     }
 
     /**
-     * Endpoint Ingest Real-Time: Menganalisis skor bot & sentimen lalu menyimpan ke PostgreSQL.
+     * Endpoint Ingest Real-Time: Menganalisis skor bot & sentimen, menyimpan ke PostgreSQL,
+     * dan menghitung ulang agregasi KPI & isu secara real-time.
      */
     public function ingest(Request $request, PostAnalyzerService $analyzer): JsonResponse
     {
@@ -145,10 +182,12 @@ class SospemController extends Controller
         $issue = Issue::where('slug', $issueSlug)->first() ?? Issue::orderBy('rank')->firstOrFail();
 
         $post = $analyzer->ingestAndAnalyze($issue, $request->all());
+        $analyzer->rerankAllIssues();
 
         return response()->json([
             'status' => 'ok',
-            'issue_total_posts' => $issue->fresh()?->total_posts ?? $issue->total_posts,
+            'kpi' => $this->buildKpiStats(),
+            'issue' => $this->formatIssueForView($issue->fresh()),
             'post' => [
                 'id' => $post->id,
                 'author' => $post->author_name,
@@ -179,6 +218,7 @@ class SospemController extends Controller
 
         foreach ($accountsModels as $acc) {
             $accountsList[$acc->handle] = [
+                'id' => $acc->id,
                 'name' => $acc->name,
                 'handle' => $acc->handle,
                 'platform' => $acc->platform,
@@ -196,19 +236,179 @@ class SospemController extends Controller
 
         $profile = $accountsList[$selectedHandle] ?? reset($accountsList);
 
+        $accountPosts = $profile
+            ? SocialPost::where('author_handle', $profile['handle'])
+                ->with('issue')
+                ->orderByDesc('posted_at')
+                ->orderByDesc('id')
+                ->limit(15)
+                ->get()
+            : collect();
+
         return view('accounts', [
             'profile' => $profile,
             'accountsList' => $accountsList,
+            'accountPosts' => $accountPosts,
         ]);
     }
 
     /**
-     * Halaman Grafik Deret Waktu & Analitik.
+     * Tambah & audit akun baru secara manual ke tabel monitored_accounts di PostgreSQL.
      */
-    public function analytics(): View
+    public function storeAccount(Request $request): RedirectResponse
     {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'handle' => ['required', 'string', 'max:80'],
+            'platform' => ['required', 'string', 'max:40'],
+            'age' => ['required', 'string', 'max:50'],
+            'followers' => ['required', 'integer', 'min:0'],
+            'following' => ['required', 'integer', 'min:0'],
+            'posting_frequency' => ['required', 'string', 'max:100'],
+        ]);
+
+        $rawHandle = trim($validated['handle']);
+        $handle = str_starts_with($rawHandle, '@') ? $rawHandle : '@'.$rawHandle;
+
+        $followers = (int) $validated['followers'];
+        $following = (int) $validated['following'];
+
+        // Kalkulasi heuristik profil akun otomatis
+        $score = 10.0;
+        $reasons = [];
+
+        if ($following > ($followers * 5) && $followers < 50) {
+            $score += 48.0;
+            $reasons[] = "Rasio Pengikut Timpang: Mengikuti {$following} akun namun hanya memiliki {$followers} pengikut.";
+        }
+
+        if (str_contains(strtolower($validated['age']), 'hari')) {
+            $score += 25.0;
+            $reasons[] = "Usia Akun Baru ({$validated['age']}): Akun baru dibuat berdekatan dengan periode amplifikasi isu.";
+        }
+
+        if (preg_match('/\d{2,}$/', $handle)) {
+            $score += 18.4;
+            $reasons[] = "Pola Handle Otomatis: Username ({$handle}) menggunakan akhiran angka berurutan.";
+        }
+
+        $botScore = min(99.2, round($score, 1));
+        $isBot = $botScore >= 60.0;
+
+        if (empty($reasons)) {
+            $reasons[] = 'Profil Organik: Rasio pengikut sehat dan riwayat akun wajar.';
+        }
+
+        $account = MonitoredAccount::updateOrCreate(
+            ['handle' => $handle],
+            [
+                'name' => trim($validated['name']),
+                'platform' => $validated['platform'],
+                'age' => $validated['age'],
+                'followers' => $followers,
+                'following' => $following,
+                'posting_frequency' => $validated['posting_frequency'],
+                'is_bot' => $isBot,
+                'bot_score' => $botScore,
+                'reasons' => $reasons,
+                'topics' => ['Makan Bergizi Gratis (MBG)'],
+                'cluster' => $isBot ? ['@sahabat_negeri77', '@rakyat_bersatu_id'] : [],
+            ]
+        );
+
+        return redirect()
+            ->route('accounts', ['handle' => $account->handle])
+            ->with('status', "Akun {$account->handle} berhasil diaudit & disimpan ke PostgreSQL (Skor Bot: {$account->bot_score}%).");
+    }
+
+    /**
+     * Hapus akun dari tabel monitored_accounts di PostgreSQL.
+     */
+    public function destroyAccount(MonitoredAccount $account): RedirectResponse
+    {
+        $handle = $account->handle;
+        $account->delete();
+
+        return redirect()
+            ->route('accounts')
+            ->with('status', "Akun {$handle} berhasil dihapus dari daftar audit.");
+    }
+
+    /**
+     * Halaman Grafik Deret Waktu & Analitik (100% dihitung dari tabel social_posts di PostgreSQL).
+     */
+    public function analytics(Request $request): View
+    {
+        $selectedSlug = (string) $request->query('issue', 'all');
+        $selectedIssue = $selectedSlug !== 'all'
+            ? Issue::where('slug', $selectedSlug)->first()
+            : null;
+
+        $query = SocialPost::query();
+        if ($selectedIssue !== null) {
+            $query->where('issue_id', $selectedIssue->id);
+        }
+
+        $posts = $query->get();
+
+        // 1. Agregasi Volume per Jam (Bucket 3 Jam: 00:00 .. 21:00) dari kolom posted_at
+        $buckets = [
+            '00:00' => [0, 2],
+            '03:00' => [3, 5],
+            '06:00' => [6, 8],
+            '09:00' => [9, 11],
+            '12:00' => [12, 14],
+            '15:00' => [15, 17],
+            '18:00' => [18, 20],
+            '21:00' => [21, 23],
+        ];
+
+        $hourlyHuman = [];
+        $hourlyBot = [];
+
+        foreach ($buckets as $range) {
+            [$startHour, $endHour] = $range;
+            $inBucket = $posts->filter(function (SocialPost $p) use ($startHour, $endHour): bool {
+                $h = $p->posted_at ? (int) $p->posted_at->format('G') : 12;
+
+                return $h >= $startHour && $h <= $endHour;
+            });
+
+            $hourlyHuman[] = $inBucket->where('is_bot', false)->count();
+            $hourlyBot[] = $inBucket->where('is_bot', true)->count();
+        }
+
+        // 2. Agregasi Perbandingan Sentimen: Orang vs Bot dari PostgreSQL
+        $humans = $posts->where('is_bot', false);
+        $bots = $posts->where('is_bot', true);
+
+        $hCount = $humans->count();
+        $bCount = $bots->count();
+
+        $humanPosPct = $hCount > 0 ? round(($humans->where('sentiment', 'positive')->count() / $hCount) * 100, 1) : 0.0;
+        $humanNegPct = $hCount > 0 ? round(100 - $humanPosPct, 1) : 0.0;
+
+        $botPosPct = $bCount > 0 ? round(($bots->where('sentiment', 'positive')->count() / $bCount) * 100, 1) : 0.0;
+        $botNegPct = $bCount > 0 ? round(100 - $botPosPct, 1) : 0.0;
+
+        // 3. Agregasi Proporsi Distribusi Platform dari PostgreSQL
+        $metaCount = $posts->where('platform', 'meta')->count();
+        $xCount = $posts->where('platform', 'x')->count();
+        $tiktokCount = $posts->where('platform', 'tiktok')->count();
+
         return view('analytics', [
             'issues' => $this->getIssuesFromDatabase(),
+            'selectedSlug' => $selectedSlug,
+            'selectedIssue' => $selectedIssue ? $this->formatIssueForView($selectedIssue) : null,
+            'chartData' => [
+                'hourly_labels' => array_keys($buckets),
+                'hourly_human' => $hourlyHuman,
+                'hourly_bot' => $hourlyBot,
+                'sentiment_pos' => [$humanPosPct, $botPosPct],
+                'sentiment_neg' => [$humanNegPct, $botNegPct],
+                'platform_counts' => [$metaCount, $xCount, $tiktokCount],
+                'total_analyzed' => $posts->count(),
+            ],
         ]);
     }
 
@@ -218,5 +418,147 @@ class SospemController extends Controller
     public function methodology(): View
     {
         return view('methodology');
+    }
+
+    /**
+     * Halaman Kelola Isu & Kata Kunci Pantauan (CRUD PostgreSQL).
+     */
+    public function issues(): View
+    {
+        $issues = Issue::orderBy('rank')->orderByDesc('total_posts')->get();
+
+        return view('issues', [
+            'issues' => $issues,
+        ]);
+    }
+
+    /**
+     * Tambah isu baru ke PostgreSQL beserta sampel postingan awal di semua platform.
+     */
+    public function storeIssue(Request $request, PostAnalyzerService $analyzer): RedirectResponse
+    {
+        $validated = $request->validate([
+            'title' => ['required', 'string', 'max:120'],
+            'keywords' => ['nullable', 'string', 'max:255'],
+            'trend' => ['required', 'in:up,stable,down'],
+        ]);
+
+        $title = trim($validated['title']);
+        $baseSlug = Str::slug($title);
+        $slug = $baseSlug ?: 'isu-'.time();
+        $counter = 1;
+        while (Issue::where('slug', $slug)->exists()) {
+            $slug = $baseSlug.'-'.$counter++;
+        }
+
+        $keywordsArray = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) ($validated['keywords'] ?? $title))
+        )));
+
+        $nextRank = ((int) Issue::max('rank')) + 1;
+
+        $issue = Issue::create([
+            'title' => $title,
+            'slug' => $slug,
+            'subtitle' => 'Pantauan Aktif',
+            'rank' => $nextRank,
+            'total_posts' => 0,
+            'human_pct' => 50.0,
+            'bot_pct' => 50.0,
+            'pos_pct' => 50.0,
+            'neg_pct' => 50.0,
+            'trend' => $validated['trend'],
+            'keywords' => $keywordsArray,
+            'platforms' => [],
+        ]);
+
+        // Buat sampel postingan awal (Orang & Bot) di ketiga platform dan hitung agregasi otomatis
+        foreach (['meta', 'x', 'tiktok'] as $platKey) {
+            $analyzer->ingestAndAnalyze($issue, [
+                'platform' => $platKey,
+                'author_name' => 'Rizal Fauzi',
+                'author_handle' => '@rizalfauzi_econ',
+                'force_bot' => false,
+                'content' => "Evaluasi publik terkait {$title}: perlu transparansi data dan pengawasan pelaksanaan di tingkat daerah agar tidak menimbulkan masalah baru.",
+            ]);
+
+            $analyzer->ingestAndAnalyze($issue, [
+                'platform' => $platKey,
+                'author_name' => 'Sahabat Kebijakan',
+                'author_handle' => '@sahabat_negeri77',
+                'force_bot' => true,
+                'content' => "Dukungan penuh masyarakat untuk {$title}! Solusi nyata demi kemajuan bangsa dan kesejahteraan bersama! #DukungKebijakan #IndonesiaMaju",
+            ]);
+        }
+
+        $analyzer->rerankAllIssues();
+
+        return redirect()
+            ->route('issues.index')
+            ->with('status', "Isu \"{$issue->title}\" beserta postingan awalnya berhasil disimpan dan dihitung di PostgreSQL.");
+    }
+
+    /**
+     * Ubah status tren isu (Naik / Stabil / Turun) di PostgreSQL.
+     */
+    public function updateIssueTrend(Request $request, Issue $issue): RedirectResponse
+    {
+        $validated = $request->validate([
+            'trend' => ['required', 'in:up,stable,down'],
+        ]);
+
+        $issue->update([
+            'trend' => $validated['trend'],
+        ]);
+
+        return redirect()
+            ->route('issues.index')
+            ->with('status', "Status tren isu \"{$issue->title}\" berhasil diperbarui.");
+    }
+
+    /**
+     * Hapus isu dari PostgreSQL dan urutkan ulang nomor rank.
+     */
+    public function destroyIssue(Issue $issue, PostAnalyzerService $analyzer): RedirectResponse
+    {
+        $title = $issue->title;
+        $issue->delete();
+
+        $analyzer->rerankAllIssues();
+
+        return redirect()
+            ->route('issues.index')
+            ->with('status', "Isu \"{$title}\" berhasil dihapus dari pantauan.");
+    }
+
+    /**
+     * Uji & simpan postingan baru dari form web ke PostgreSQL melalui PostAnalyzerService.
+     */
+    public function storePost(Request $request, PostAnalyzerService $analyzer): RedirectResponse
+    {
+        $validated = $request->validate([
+            'issue_id' => ['required', 'exists:issues,id'],
+            'platform' => ['required', 'in:meta,x,tiktok'],
+            'author_name' => ['required', 'string', 'max:100'],
+            'author_handle' => ['required', 'string', 'max:80'],
+            'content' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $issue = Issue::findOrFail($validated['issue_id']);
+        $post = $analyzer->ingestAndAnalyze($issue, $validated);
+        $analyzer->rerankAllIssues();
+
+        $kategori = $post->is_bot
+            ? "Jaringan Bot (Skor Bot: {$post->bot_score}%)"
+            : 'Warga Organik (Skor Orang: '.round(100 - (float) $post->bot_score, 1).'%)';
+
+        $sentimenLabel = $post->sentiment === 'positive'
+            ? "+ Positif ({$post->sentiment_conf}%)"
+            : "- Negatif ({$post->sentiment_conf}%)";
+
+        return redirect()
+            ->route('issues.index')
+            ->with('status', "Postingan berhasil dianalisis & disimpan ke PostgreSQL! Hasil Deteksi: {$kategori} · Sentimen: {$sentimenLabel}.");
     }
 }

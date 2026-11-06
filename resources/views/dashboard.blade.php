@@ -451,6 +451,7 @@
         </h1>
 
         <div class="top-right-actions">
+            <a href="{{ route('issues.index') }}" class="btn-clean">+ Kelola Isu</a>
             <a href="{{ route('analytics') }}" class="btn-clean">Grafik Detail</a>
             <a href="{{ route('methodology') }}" class="btn-clean">UU PDP</a>
             <button type="button" class="btn-clean btn-primary" onclick="simulateIngest()">+ Simulasi Stream</button>
@@ -464,9 +465,9 @@
         <div class="kpi-primary-card">
             <div class="kpi-primary-top">
                 <div>
-                    <div class="kpi-primary-label">Total Sampel Terpantau</div>
-                    <div class="kpi-primary-hero-number tabular" id="kpiTotalSampel">68.492</div>
-                    <div class="kpi-primary-delta tabular" style="color: var(--color-teal-dark); font-weight: 500;">&#8599; +14,2% vs kemarin</div>
+                    <div class="kpi-primary-label">Total Sampel Terpantau (PostgreSQL)</div>
+                    <div class="kpi-primary-hero-number tabular" id="kpiTotalSampel">{{ number_format($kpi['total_posts'], 0, ',', '.') }}</div>
+                    <div class="kpi-primary-delta tabular" style="color: var(--color-teal-dark); font-weight: 500;">&#8599; Terhubung langsung ke tabel social_posts</div>
                 </div>
 
                 <!-- Sparkline Hijau Stockbit dengan Area Fill Halus -->
@@ -493,12 +494,12 @@
             <div class="kpi-primary-split">
                 <div class="kpi-split-item">
                     <div class="kpi-split-label">Warga Organik</div>
-                    <div class="kpi-split-val tabular">42.191</div>
+                    <div class="kpi-split-val tabular" id="kpiHumanPosts">{{ number_format($kpi['human_posts'], 0, ',', '.') }}</div>
                 </div>
 
                 <div class="kpi-split-item">
                     <div class="kpi-split-label">Jaringan Bot</div>
-                    <div class="kpi-split-val tabular">26.301</div>
+                    <div class="kpi-split-val tabular" id="kpiBotPosts">{{ number_format($kpi['bot_posts'], 0, ',', '.') }}</div>
                 </div>
             </div>
         </div>
@@ -508,25 +509,25 @@
             <div class="kpi-compact-card">
                 <div class="kpi-compact-left">
                     <span class="kpi-compact-label">Warga aktif organik</span>
-                    <span class="kpi-compact-val tabular">61,6%</span>
+                    <span class="kpi-compact-val tabular" id="kpiHumanPct">{{ number_format($kpi['human_pct'], 1, ',', '.') }}%</span>
                 </div>
-                <div class="kpi-compact-delta tabular" style="color: var(--color-teal-dark);">&#8599; +3,1%</div>
+                <div class="kpi-compact-delta tabular" style="color: var(--color-teal-dark);">&#8599; Organik</div>
             </div>
 
             <div class="kpi-compact-card">
                 <div class="kpi-compact-left">
                     <span class="kpi-compact-label">Anomali botnet</span>
-                    <span class="kpi-compact-val tabular">38,4%</span>
+                    <span class="kpi-compact-val tabular" id="kpiBotPct">{{ number_format($kpi['bot_pct'], 1, ',', '.') }}%</span>
                 </div>
-                <div class="kpi-compact-delta tabular" style="color: var(--color-red-dark);">&#8600; +6,2 pt</div>
+                <div class="kpi-compact-delta tabular" style="color: var(--color-red-dark);">&#8600; Botnet</div>
             </div>
 
             <div class="kpi-compact-card">
                 <div class="kpi-compact-left">
                     <span class="kpi-compact-label">Isu tertinggi (#1)</span>
-                    <span class="kpi-compact-val" style="font-size: 18px;">Makan Bergizi Gratis</span>
+                    <span class="kpi-compact-val" id="kpiTopTitle" style="font-size: 18px;">{{ $kpi['top_issue_title'] }}</span>
                 </div>
-                <div class="kpi-compact-delta tabular" style="color: var(--color-teal-dark); font-weight: 600;">&#8599; +42,8%</div>
+                <div class="kpi-compact-delta tabular" id="kpiTopShare" style="color: var(--color-teal-dark); font-weight: 600;">{{ number_format($kpi['top_issue_share'], 1, ',', '.') }}% porsi</div>
             </div>
         </div>
     </section>
@@ -706,11 +707,13 @@
                 })
             });
             const data = await res.json();
-            if (data.status === 'ok') {
-                const el = document.getElementById('kpiTotalSampel');
-                let n = parseInt(el.innerText.replace(/\./g, '')) + 1;
-                el.innerText = n.toLocaleString('id-ID');
-                showToast("Tersimpan ke PostgreSQL (ID #" + data.post.id + ")");
+            if (data.status === 'ok' && data.kpi) {
+                document.getElementById('kpiTotalSampel').innerText = data.kpi.total_posts.toLocaleString('id-ID');
+                document.getElementById('kpiHumanPosts').innerText = data.kpi.human_posts.toLocaleString('id-ID');
+                document.getElementById('kpiBotPosts').innerText = data.kpi.bot_posts.toLocaleString('id-ID');
+                document.getElementById('kpiHumanPct').innerText = data.kpi.human_pct.toFixed(1).replace('.', ',') + '%';
+                document.getElementById('kpiBotPct').innerText = data.kpi.bot_pct.toFixed(1).replace('.', ',') + '%';
+                showToast("Tersimpan & dihitung ulang di PostgreSQL (ID #" + data.post.id + ")");
             }
         } catch (e) {
             showToast("Gagal menyimpan stream");

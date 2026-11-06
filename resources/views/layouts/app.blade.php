@@ -504,11 +504,12 @@
                     <span class="side-nav-label">Dashboard Isu</span>
                 </a>
 
-                <a href="{{ route('feed.platform', ['issueSlug' => 'makan-bergizi-gratis', 'platform' => 'x']) }}" class="side-nav-link {{ request()->routeIs('feed.platform') ? 'is-active' : '' }}" title="Feed Postingan (Orang vs Bot)">
+                <a href="{{ route('issues.index') }}" class="side-nav-link {{ request()->routeIs('issues.*') ? 'is-active' : '' }}" title="Tambah & Kelola Isu Pantauan">
                     <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
-                    <span class="side-nav-label">Feed Orang vs Bot</span>
+                    <span class="side-nav-label">Kelola Isu</span>
                 </a>
 
                 <a href="{{ route('accounts') }}" class="side-nav-link {{ request()->routeIs('accounts') ? 'is-active' : '' }}" title="Audit Profil & Jaringan Akun">
