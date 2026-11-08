@@ -532,14 +532,19 @@
         </div>
     </section>
 
-    <!-- 2. GRAFIK VOLUME HARIAN -->
+    <!-- 2. GRAFIK VOLUME HARIAN (DINAMIS DARI POSTGRESQL: 24j, 7h, 30h) -->
     <section class="daily-chart-card">
         <div class="daily-chart-header">
-            <span class="daily-chart-title">Tren volume percakapan harian</span>
+            <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+                <span class="daily-chart-title">Tren volume percakapan harian</span>
+                <span class="tabular" id="periodSummaryMeta" style="font-size: 12px; color: var(--color-text-secondary);">
+                    {{ number_format($periodTrends['7h']['total'], 0, ',', '.') }} post (Orang: {{ number_format($periodTrends['7h']['human'], 0, ',', '.') }} &middot; Bot: {{ number_format($periodTrends['7h']['bot'], 0, ',', '.') }})
+                </span>
+            </div>
             <div class="period-tabs">
-                <button type="button" class="period-tab" onclick="switchPeriod(this)">24j</button>
-                <button type="button" class="period-tab is-active" onclick="switchPeriod(this)">7h</button>
-                <button type="button" class="period-tab" onclick="switchPeriod(this)">30h</button>
+                <button type="button" class="period-tab" data-period="24j" onclick="switchPeriod(this, '24j')">24j</button>
+                <button type="button" class="period-tab is-active" data-period="7h" onclick="switchPeriod(this, '7h')">7h</button>
+                <button type="button" class="period-tab" data-period="30h" onclick="switchPeriod(this, '30h')">30h</button>
             </div>
         </div>
 
@@ -554,17 +559,17 @@
                 <line x1="0" y1="20" x2="1000" y2="20" stroke="var(--color-border-subtle)" stroke-width="1"/>
                 <line x1="0" y1="50" x2="1000" y2="50" stroke="var(--color-border-subtle)" stroke-width="1"/>
                 <line x1="0" y1="80" x2="1000" y2="80" stroke="var(--color-border-subtle)" stroke-width="1"/>
-                <path d="M0,74 C50,68 90,62 140,70 C190,78 230,45 280,48 C330,51 370,38 420,44 C470,50 510,28 560,32 C610,36 650,24 700,38 C750,52 790,18 840,22 C890,26 940,8 1000,12 L1000,96 L0,96 Z"
+                <path id="dailyAreaPath" d="{{ $periodTrends['7h']['area_path'] }}"
                       fill="url(#stockbitChartGrad)"/>
-                <path d="M0,74 C50,68 90,62 140,70 C190,78 230,45 280,48 C330,51 370,38 420,44 C470,50 510,28 560,32 C610,36 650,24 700,38 C750,52 790,18 840,22 C890,26 940,8 1000,12"
+                <path id="dailyLinePath" d="{{ $periodTrends['7h']['line_path'] }}"
                       fill="none" stroke="var(--color-teal)" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </div>
 
-        <div class="daily-axis-labels tabular">
-            <span>1 Nov</span>
-            <span>3 Nov</span>
-            <span>6 Nov</span>
+        <div class="daily-axis-labels tabular" id="dailyAxisLabels">
+            @foreach($periodTrends['7h']['axis_labels'] as $lbl)
+                <span>{{ $lbl }}</span>
+            @endforeach
         </div>
     </section>
 
@@ -679,14 +684,30 @@
 
 @section('scripts')
 <script>
+    const periodTrendsData = @json($periodTrends);
+
     function toggleExpand(rowElement) {
         const card = rowElement.closest('.issue-item');
         card.classList.toggle('is-expanded');
     }
 
-    function switchPeriod(btn) {
+    function switchPeriod(btn, periodKey) {
         btn.parentElement.querySelectorAll('.period-tab').forEach(b => b.classList.remove('is-active'));
         btn.classList.add('is-active');
+
+        const data = periodTrendsData[periodKey];
+        if (!data) {
+            return;
+        }
+
+        document.getElementById('dailyAreaPath').setAttribute('d', data.area_path);
+        document.getElementById('dailyLinePath').setAttribute('d', data.line_path);
+
+        const labelsWrap = document.getElementById('dailyAxisLabels');
+        labelsWrap.innerHTML = data.axis_labels.map(lbl => `<span>${lbl}</span>`).join('');
+
+        document.getElementById('periodSummaryMeta').innerHTML =
+            `${data.total.toLocaleString('id-ID')} post (Orang: ${data.human.toLocaleString('id-ID')} &middot; Bot: ${data.bot.toLocaleString('id-ID')})`;
     }
 
     async function simulateIngest() {

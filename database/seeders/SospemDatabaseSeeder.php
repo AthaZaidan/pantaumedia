@@ -330,6 +330,7 @@ class SospemDatabaseSeeder extends Seeder
                 for ($round = 0; $round < $platWeight; $round++) {
                     foreach ($humanTemplates as $hIdx => $hs) {
                         $hour = $hoursPool[($idx + $round + $hIdx) % count($hoursPool)];
+                        $daysAgo = ($round === 0) ? 0 : (($idx + $round * 3 + $hIdx * 2) % 28);
                         SocialPost::create([
                             'issue_id' => $issue->id,
                             'monitored_account_id' => $hs['monitored_account_id'],
@@ -344,7 +345,7 @@ class SospemDatabaseSeeder extends Seeder
                             'likes' => $hs['likes'],
                             'reposts' => $hs['reposts'],
                             'post_url' => $hs['url'],
-                            'posted_at' => now()->startOfDay()->addHours($hour)->addMinutes(($hIdx * 7) % 55),
+                            'posted_at' => now()->subDays($daysAgo)->startOfDay()->addHours($hour)->addMinutes(($hIdx * 7) % 55),
                         ]);
                     }
 
@@ -352,6 +353,7 @@ class SospemDatabaseSeeder extends Seeder
                     $botSlice = array_slice($botTemplates, 0, ($idx % 2 === 0) ? 4 : 3);
                     foreach ($botSlice as $bIdx => $bs) {
                         $hour = $hoursPool[($idx + $round + $bIdx + 3) % count($hoursPool)];
+                        $daysAgo = ($round === 0) ? 0 : (($idx + $round * 2 + $bIdx * 3) % 28);
                         SocialPost::create([
                             'issue_id' => $issue->id,
                             'monitored_account_id' => $bs['monitored_account_id'],
@@ -366,7 +368,7 @@ class SospemDatabaseSeeder extends Seeder
                             'likes' => $bs['likes'],
                             'reposts' => $bs['reposts'],
                             'post_url' => $bs['url'],
-                            'posted_at' => now()->startOfDay()->addHours($hour)->addMinutes(($bIdx * 11) % 55),
+                            'posted_at' => now()->subDays($daysAgo)->startOfDay()->addHours($hour)->addMinutes(($bIdx * 11) % 55),
                         ]);
                     }
                 }
