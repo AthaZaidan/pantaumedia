@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Issue;
 use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
+use App\Services\ChatbotAssistantService;
 use App\Services\PostAnalyzerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
 
@@ -1048,121 +1050,133 @@ class SospemController extends Controller
      * Meneruskan pertanyaan + konteks PostgreSQL ke Agent Lokal (Ollama / OpenAI-compatible / JupyterHub Webhook),
      * dan otomatis fallback ke mesin analisis forensik PostgreSQL jika Agent Lokal offline atau mode database dipilih.
      */
-    public function askChatbot(Request $request): JsonResponse
+    public function askChatbot(Request $request, ChatbotAssistantService $assistant): JsonResponse
     {
-        $validated = $request->validate([
-            'message' => ['required', 'string', 'max:2000'],
-            'issue_slug' => ['nullable', 'string', 'max:120'],
-            'agent_url' => ['nullable', 'string', 'max:500'],
-            'agent_model' => ['nullable', 'string', 'max:120'],
-            'agent_mode' => ['nullable', 'in:auto,external,database'],
-            'history' => ['nullable', 'array'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'message' => ['required', 'string', 'max:2000'],
+                'issue_slug' => ['nullable', 'string', 'max:120'],
+                'agent_url' => ['nullable', 'string', 'max:500'],
+                'agent_model' => ['nullable', 'string', 'max:120'],
+                'agent_mode' => ['nullable', 'in:auto,external,database'],
+                'history' => ['nullable', 'array'],
+            ]);
 
-        $message = trim($validated['message']);
-        $issueSlug = $validated['issue_slug'] ?? null;
-        $normalizedSlug = ($issueSlug !== null && $issueSlug !== '' && $issueSlug !== 'all') ? $issueSlug : null;
-        $agentMode = $validated['agent_mode'] ?? 'auto';
-        $agentUrl = trim((string) ($validated['agent_url'] ?? env('LOCAL_AGENT_URL', 'http://127.0.0.1:11434/api/chat')));
-        $agentModel = trim((string) ($validated['agent_model'] ?? env('LOCAL_AGENT_MODEL', 'qwen2.5:3b')));
-        if ($agentModel === '') {
-            $agentModel = 'qwen2.5:3b';
-        }
+            $message = trim($validated['message']);
+            if ($message === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'reply' => 'Pesan tidak boleh kosong. Silakan ketik pertanyaan Anda.',
+                ], 422);
+            }
 
-        $rag = $this->buildDatabaseRagContext($normalizedSlug);
-        $systemPrompt = "Anda adalah Asisten Analis Forensik Opini Publik & Deteksi Bot SOSPEM. Jawablah dalam bahasa Indonesia yang ringkas, objektif, dan berbasis data berikut saja. Jangan mengarang angka di luar data.\n\n".$rag['summary'];
+            $issueSlug = $validated['issue_slug'] ?? null;
+            $normalizedSlug = ($issueSlug !== null && $issueSlug !== '' && $issueSlug !== 'all') ? $issueSlug : null;
+            $agentMode = $validated['agent_mode'] ?? 'auto';
+            $agentUrl = trim((string) ($validated['agent_url'] ?? env('LOCAL_AGENT_URL', 'http://127.0.0.1:11434/api/chat')));
+            $agentModel = trim((string) ($validated['agent_model'] ?? env('LOCAL_AGENT_MODEL', 'qwen2.5:3b')));
+            if ($agentModel === '') {
+                $agentModel = 'qwen2.5:3b';
+            }
 
-        $historyMessages = [];
-        if (! empty($validated['history']) && is_array($validated['history'])) {
-            foreach (array_slice($validated['history'], -6) as $item) {
-                if (! is_array($item)) {
-                    continue;
-                }
-                $role = in_array(($item['role'] ?? ''), ['user', 'assistant'], true) ? $item['role'] : null;
-                $content = trim((string) ($item['content'] ?? ''));
-                if ($role !== null && $content !== '') {
-                    $historyMessages[] = ['role' => $role, 'content' => $content];
+            $rag = $this->buildDatabaseRagContext($normalizedSlug);
+            $externalContext = $assistant->gatherExternalContext($message, $rag);
+            $systemPrompt = $assistant->buildSystemPrompt($rag, $externalContext);
+
+            $historyMessages = [];
+            if (! empty($validated['history']) && is_array($validated['history'])) {
+                foreach (array_slice($validated['history'], -6) as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $role = in_array(($item['role'] ?? ''), ['user', 'assistant'], true) ? $item['role'] : null;
+                    $content = trim((string) ($item['content'] ?? ''));
+                    if ($role !== null && $content !== '') {
+                        $historyMessages[] = ['role' => $role, 'content' => $content];
+                    }
                 }
             }
-        }
 
-        $messagesPayload = array_merge(
-            [['role' => 'system', 'content' => $systemPrompt]],
-            $historyMessages,
-            [['role' => 'user', 'content' => $message]]
-        );
+            $messagesPayload = array_merge(
+                [['role' => 'system', 'content' => $systemPrompt]],
+                $historyMessages,
+                [['role' => 'user', 'content' => $message]]
+            );
 
-        $canCallExternal = $agentMode !== 'database'
-            && $agentUrl !== ''
-            && (str_starts_with($agentUrl, 'http://') || str_starts_with($agentUrl, 'https://'));
+            $canCallExternal = $agentMode !== 'database'
+                && $agentUrl !== ''
+                && (str_starts_with($agentUrl, 'http://') || str_starts_with($agentUrl, 'https://'));
 
-        $agentError = null;
-        $startTime = microtime(true);
+            $agentError = null;
+            $startTime = microtime(true);
 
-        if ($canCallExternal) {
-            try {
-                $lowerUrl = strtolower($agentUrl);
-                if (str_contains($lowerUrl, '/api/generate')) {
-                    $body = [
-                        'model' => $agentModel,
-                        'system' => $systemPrompt,
-                        'prompt' => $message,
-                        'stream' => false,
-                    ];
-                } elseif (str_contains($lowerUrl, '/api/chat') || str_contains($lowerUrl, '/v1/chat/completions')) {
-                    $body = [
-                        'model' => $agentModel,
-                        'messages' => $messagesPayload,
-                        'stream' => false,
-                    ];
-                } else {
-                    $body = [
-                        'model' => $agentModel,
-                        'system_prompt' => $systemPrompt,
-                        'message' => $message,
-                        'prompt' => $message,
-                        'context' => $rag['summary'],
-                        'messages' => $messagesPayload,
-                        'stream' => false,
-                    ];
-                }
-
-                $response = Http::connectTimeout(4)
-                    ->timeout(45)
-                    ->acceptJson()
-                    ->post($agentUrl, $body);
-
-                if ($response->successful()) {
-                    $json = $response->json();
-                    $replyText = null;
-
-                    if (is_array($json)) {
-                        $replyText = $json['message']['content']
-                            ?? $json['choices'][0]['message']['content']
-                            ?? $json['response']
-                            ?? $json['reply']
-                            ?? $json['answer']
-                            ?? $json['output']
-                            ?? null;
+            if ($canCallExternal && $this->isLocalAgentReachable($agentUrl)) {
+                try {
+                    $lowerUrl = strtolower($agentUrl);
+                    if (str_contains($lowerUrl, '/api/generate')) {
+                        $body = [
+                            'model' => $agentModel,
+                            'system' => $systemPrompt,
+                            'prompt' => $message,
+                            'stream' => false,
+                        ];
+                    } elseif (str_contains($lowerUrl, '/api/chat') || str_contains($lowerUrl, '/v1/chat/completions')) {
+                        $body = [
+                            'model' => $agentModel,
+                            'messages' => $messagesPayload,
+                            'stream' => false,
+                        ];
+                    } else {
+                        $body = [
+                            'model' => $agentModel,
+                            'system_prompt' => $systemPrompt,
+                            'message' => $message,
+                            'prompt' => $message,
+                            'context' => $rag['summary']."\n\n".$externalContext['extra_prompt'],
+                            'messages' => $messagesPayload,
+                            'stream' => false,
+                        ];
                     }
 
-                    if (is_string($replyText) && trim($replyText) !== '') {
-                        return response()->json([
-                            'status' => 'ok',
-                            'source' => 'local_agent',
-                            'agent_model' => $agentModel,
-                            'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
-                            'reply' => trim($replyText),
-                            'kpi' => $rag['kpi'],
-                        ]);
-                    }
+                    $response = Http::connectTimeout(3)
+                        ->timeout(45)
+                        ->acceptJson()
+                        ->post($agentUrl, $body);
 
-                    $agentError = 'Respons Agent Lokal berhasil (HTTP '.$response->status().') tetapi format JSON tidak berisi teks balasan.';
-                } else {
-                    $agentError = 'Agent Lokal mengembalikan HTTP '.$response->status().'.';
+                    if ($response->successful()) {
+                        $json = $response->json();
+                        $replyText = null;
+
+                        if (is_array($json)) {
+                            $replyText = $json['message']['content']
+                                ?? $json['choices'][0]['message']['content']
+                                ?? $json['response']
+                                ?? $json['reply']
+                                ?? $json['answer']
+                                ?? $json['output']
+                                ?? null;
+                        }
+
+                        if (is_string($replyText) && trim($replyText) !== '') {
+                            return response()->json([
+                                'status' => 'ok',
+                                'source' => 'local_agent',
+                                'agent_model' => $agentModel,
+                                'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                                'reply' => $assistant->cleanReplyText($replyText),
+                                'kpi' => $rag['kpi'],
+                            ]);
+                        }
+
+                        $agentError = 'Agent lokal merespons tanpa isi teks balasan.';
+                    } else {
+                        $agentError = 'Agent lokal mengembalikan status HTTP '.$response->status().'.';
+                    }
+                } catch (Throwable $e) {
+                    $agentError = 'Agent lokal tidak dapat dihubungi.';
                 }
-            } catch (Throwable $e) {
-                $agentError = 'Tidak dapat terhubung ke Agent Lokal ('.$e->getMessage().').';
+            } elseif ($canCallExternal) {
+                $agentError = 'Port Agent Lokal belum aktif.';
             }
 
             if ($agentMode === 'external' && $agentError !== null) {
@@ -1170,23 +1184,73 @@ class SospemController extends Controller
                     'status' => 'error',
                     'source' => 'local_agent_error',
                     'error' => $agentError,
-                    'reply' => "Gagal terhubung ke Agent Lokal ({$agentUrl}): {$agentError}\n\nPastikan server Ollama atau FastAPI/Qwen Anda aktif, atau ubah mode ke Otomatis / Database PostgreSQL.",
+                    'reply' => 'Agent Lokal sedang tidak aktif atau tidak dapat dihubungi. Silakan nyalakan layanan Ollama / JupyterHub Anda atau coba lagi beberapa saat lagi.',
                     'kpi' => $rag['kpi'],
-                ]);
+                ], 503);
             }
+
+            if ($agentMode === 'auto') {
+                $generativeReply = $assistant->callFreeGenerativeAi($messagesPayload, $externalContext['knowledge'] ?? null);
+                if (is_string($generativeReply) && trim($generativeReply) !== '') {
+                    return response()->json([
+                        'status' => 'ok',
+                        'source' => 'generative_ai',
+                        'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                        'reply' => $assistant->cleanReplyText($generativeReply),
+                        'kpi' => $rag['kpi'],
+                    ]);
+                }
+            }
+
+            $fallbackReply = $assistant->generateSmartConversationalReply($message, $rag, $externalContext);
+
+            return response()->json([
+                'status' => 'ok',
+                'source' => 'database_rag_engine',
+                'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                'reply' => $assistant->cleanReplyText($fallbackReply),
+                'kpi' => $rag['kpi'],
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'reply' => 'Format pertanyaan tidak valid. Pastikan pesan tidak kosong dan maksimal 2.000 karakter.',
+            ], 422);
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => 'error',
+                'reply' => 'Maaf, terjadi kendala sementara di server saat memproses pertanyaan Anda. Silakan coba beberapa detik lagi.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Cek cepat apakah host Agent Lokal (localhost / 127.0.0.1) terbuka agar tidak menunggu timeout TCP.
+     */
+    private function isLocalAgentReachable(string $url): bool
+    {
+        if (app()->runningUnitTests()) {
+            return true;
         }
 
-        // Fallback otomatis atau mode analisis langsung database PostgreSQL
-        $fallbackReply = $this->generateDatabaseForensicReply($message, $rag, $agentError);
+        $parts = parse_url($url);
+        $host = $parts['host'] ?? '';
+        $port = $parts['port'] ?? (($parts['scheme'] ?? 'http') === 'https' ? 443 : 80);
 
-        return response()->json([
-            'status' => 'ok',
-            'source' => 'database_rag_engine',
-            'agent_error' => $agentError,
-            'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
-            'reply' => $fallbackReply,
-            'kpi' => $rag['kpi'],
-        ]);
+        if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            return true;
+        }
+
+        $conn = @fsockopen($host, (int) $port, $errno, $errstr, 0.15);
+        if (is_resource($conn)) {
+            fclose($conn);
+
+            return true;
+        }
+
+        return false;
     }
 
     /**

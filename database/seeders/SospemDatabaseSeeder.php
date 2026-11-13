@@ -5,8 +5,10 @@ namespace Database\Seeders;
 use App\Models\Issue;
 use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
+use App\Models\User;
 use App\Services\PostAnalyzerService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class SospemDatabaseSeeder extends Seeder
 {
@@ -17,6 +19,15 @@ class SospemDatabaseSeeder extends Seeder
     public function run(): void
     {
         $analyzer = app(PostAnalyzerService::class);
+
+        // Pastikan akun admin default tersedia untuk login
+        User::updateOrCreate(
+            ['email' => 'admin@sospem.id'],
+            [
+                'name' => 'Admin SOSPEM',
+                'password' => Hash::make('password'),
+            ]
+        );
 
         // Hapus seluruh data postingan dan akun dummy
         SocialPost::query()->delete();

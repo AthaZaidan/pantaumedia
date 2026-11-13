@@ -327,8 +327,26 @@
             padding: 0;
         }
 
-        .left-sidebar.is-minimized .theme-toggle-label {
+        .left-sidebar.is-minimized .theme-toggle-label,
+        .left-sidebar.is-minimized .auth-user-info,
+        .left-sidebar.is-minimized .logout-btn-label {
             display: none;
+        }
+
+        .auth-footer-box {
+            margin-top: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .auth-user-info {
+            font-size: 12px;
+            color: var(--color-text-secondary);
+            padding: 2px 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* Area Konten Utama */
@@ -567,6 +585,25 @@
                     </svg>
                     <span class="theme-toggle-label" id="themeToggleLabel">Mode Terang</span>
                 </button>
+
+                @auth
+                    <div class="auth-footer-box">
+                        <div class="auth-user-info" title="{{ auth()->user()->email }}">
+                            Masuk: <strong style="color: var(--color-text-primary);">{{ auth()->user()->name }}</strong>
+                        </div>
+                        <form action="{{ route('logout') }}" method="POST" style="width: 100%;">
+                            @csrf
+                            <button type="submit" class="theme-toggle-btn" title="Keluar" style="color: var(--color-red-dark);">
+                                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                    <polyline points="16 17 21 12 16 7"></polyline>
+                                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                                </svg>
+                                <span class="logout-btn-label">Keluar</span>
+                            </button>
+                        </form>
+                    </div>
+                @endauth
             </div>
         </aside>
 
