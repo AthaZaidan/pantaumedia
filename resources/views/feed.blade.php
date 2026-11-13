@@ -281,7 +281,7 @@
 
             <div class="split-col-scroll" id="humanFeedScroll">
                 @forelse($humanPosts as $post)
-                    <article class="post-item-card">
+                    <article class="post-item-card" data-post-id="{{ $post['id'] }}">
                         <div class="post-item-top">
                             <div>
                                 <a href="{{ route('accounts', ['handle' => $post['handle']]) }}" class="post-author-link">{{ $post['author'] }}</a>
@@ -299,6 +299,32 @@
                         </div>
 
                         <p class="post-body-text">{{ $post['text'] }}</p>
+
+                        @if(!empty($post['ai_institutions']) || !empty($post['ai_bot_reason']))
+                            <div style="font-size: 11.5px; color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 3px; padding-top: 4px; border-top: 1px dashed var(--color-border-subtle);">
+                                @if(!empty($post['ai_institutions']))
+                                    <div>
+                                        <span style="color: var(--color-text-muted);">Lembaga Terkait (AI Qwen):</span>
+                                        @foreach($post['ai_institutions'] as $idx => $inst)
+                                            @if($idx > 0) <span style="color: var(--color-text-muted);">&middot;</span> @endif
+                                            <span style="font-weight: 600; color: var(--color-text-primary);">{{ $inst['lembaga'] }}</span>
+                                            @if(($inst['sentiment_key'] ?? '') === 'positive')
+                                                <span style="color: var(--color-teal-dark);">({{ $inst['sentimen'] }})</span>
+                                            @elseif(($inst['sentiment_key'] ?? '') === 'negative')
+                                                <span style="color: var(--color-red-dark);">({{ $inst['sentimen'] }})</span>
+                                            @else
+                                                <span style="color: var(--color-text-secondary);">({{ $inst['sentimen'] }})</span>
+                                            @endif
+                                        @endforeach
+                                    </div>
+                                @endif
+                                @if(!empty($post['ai_bot_reason']))
+                                    <div>
+                                        <span style="color: var(--color-text-muted);">Catatan AI:</span> {{ $post['ai_bot_reason'] }}
+                                    </div>
+                                @endif
+                            </div>
+                        @endif
 
                         <div class="post-item-footer tabular">
                             <span>{{ number_format($post['likes'], 0, ',', '.') }} suka &middot; {{ number_format($post['reposts'], 0, ',', '.') }} repost</span>
@@ -329,7 +355,7 @@
 
             <div class="split-col-scroll" id="botFeedScroll">
                 @forelse($botPosts as $post)
-                    <article class="post-item-card">
+                    <article class="post-item-card" data-post-id="{{ $post['id'] }}">
                         <div class="post-item-top">
                             <div>
                                 <a href="{{ route('accounts', ['handle' => $post['handle']]) }}" class="post-author-link">{{ $post['author'] }}</a>
@@ -347,6 +373,32 @@
                         </div>
 
                         <p class="post-body-text">{{ $post['text'] }}</p>
+
+                        @if(!empty($post['ai_institutions']) || !empty($post['ai_bot_reason']))
+                            <div style="font-size: 11.5px; color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 3px; padding-top: 4px; border-top: 1px dashed var(--color-border-subtle);">
+                                @if(!empty($post['ai_institutions']))
+                                    <div>
+                                        <span style="color: var(--color-text-muted);">Lembaga Terkait (AI Qwen):</span>
+                                        @foreach($post['ai_institutions'] as $idx => $inst)
+                                            @if($idx > 0) <span style="color: var(--color-text-muted);">&middot;</span> @endif
+                                            <span style="font-weight: 600; color: var(--color-text-primary);">{{ $inst['lembaga'] }}</span>
+                                            @if(($inst['sentiment_key'] ?? '') === 'positive')
+                                                <span style="color: var(--color-teal-dark);">({{ $inst['sentimen'] }})</span>
+                                            @elseif(($inst['sentiment_key'] ?? '') === 'negative')
+                                                <span style="color: var(--color-red-dark);">({{ $inst['sentimen'] }})</span>
+                                            @else
+                                                <span style="color: var(--color-text-secondary);">({{ $inst['sentimen'] }})</span>
+                                            @endif
+                                        @endforeach
+                                    </div>
+                                @endif
+                                @if(!empty($post['ai_bot_reason']))
+                                    <div>
+                                        <span style="color: var(--color-text-muted);">Catatan Forensik AI:</span> {{ $post['ai_bot_reason'] }}
+                                    </div>
+                                @endif
+                            </div>
+                        @endif
 
                         <div class="post-item-footer tabular">
                             <span>{{ number_format($post['likes'], 0, ',', '.') }} suka &middot; {{ number_format($post['reposts'], 0, ',', '.') }} repost</span>
@@ -366,6 +418,56 @@
 
 @section('scripts')
 <script>
+    function renderPostCardHtml(p, isBot) {
+        const scoreLabel = isBot
+            ? `<span style="color: var(--color-text-secondary);">Bot (${p.bot_score}%)</span>`
+            : `<span style="color: var(--color-teal-dark);">Orang (${p.human_score ?? (100 - p.bot_score)}%)</span>`;
+        const sentimentLabel = p.sentiment === 'positive'
+            ? `<span style="color: var(--color-teal-dark);">+ Positif (${p.sentiment_conf}%)</span>`
+            : `<span style="color: var(--color-red-dark);">- Negatif (${p.sentiment_conf}%)</span>`;
+
+        let aiMetaHtml = '';
+        const hasInst = Array.isArray(p.ai_institutions) && p.ai_institutions.length > 0;
+        const hasReason = p.ai_bot_reason && String(p.ai_bot_reason).trim() !== '';
+
+        if (hasInst || hasReason) {
+            let instParts = '';
+            if (hasInst) {
+                const items = p.ai_institutions.map(inst => {
+                    const color = inst.sentiment_key === 'positive'
+                        ? 'var(--color-teal-dark)'
+                        : (inst.sentiment_key === 'negative' ? 'var(--color-red-dark)' : 'var(--color-text-secondary)');
+                    return `<span style="font-weight: 600; color: var(--color-text-primary);">${inst.lembaga}</span> <span style="color: ${color};">(${inst.sentimen})</span>`;
+                }).join(' <span style="color: var(--color-text-muted);">&middot;</span> ');
+                instParts = `<div><span style="color: var(--color-text-muted);">Lembaga Terkait (AI Qwen):</span> ${items}</div>`;
+            }
+            const reasonPart = hasReason
+                ? `<div><span style="color: var(--color-text-muted);">Catatan Forensik AI:</span> ${p.ai_bot_reason}</div>`
+                : '';
+            aiMetaHtml = `<div style="font-size: 11.5px; color: var(--color-text-secondary); display: flex; flex-direction: column; gap: 3px; padding-top: 4px; border-top: 1px dashed var(--color-border-subtle);">${instParts}${reasonPart}</div>`;
+        }
+
+        return `
+            <div class="post-item-top">
+                <div>
+                    <a href="{{ route('accounts') }}?handle=${encodeURIComponent(p.handle)}" class="post-author-link">${p.author}</a>
+                    <span class="post-handle-text tabular">${p.handle} &middot; ${p.time}</span>
+                </div>
+                <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
+                    ${scoreLabel}
+                    <span style="color: var(--color-text-muted);">&middot;</span>
+                    ${sentimentLabel}
+                </div>
+            </div>
+            <p class="post-body-text">${p.text}</p>
+            ${aiMetaHtml}
+            <div class="post-item-footer tabular">
+                <span>${Number(p.likes || 0).toLocaleString('id-ID')} suka &middot; ${Number(p.reposts || 0).toLocaleString('id-ID')} repost</span>
+                <a href="${p.url}" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
+            </div>
+        `;
+    }
+
     async function injectLiveHumanPost() {
         try {
             const res = await fetch("{{ route('ingest.post') }}", {
@@ -380,7 +482,12 @@
                     platform: "{{ $platformKey }}",
                     author_name: 'Warga Lapangan (Live)',
                     author_handle: '@suara_warga_live',
-                    force_bot: false,
+                    ai_sentiment: 'Negatif',
+                    ai_bot_score: 12.0,
+                    ai_bot_reason: 'Komentar organik warga dengan keluhan spesifik lapangan.',
+                    ai_institutions: [
+                        { lembaga: 'Pemerintah Daerah', sentimen: 'Negatif', alasan: 'Pengawasan distribusi perlu diperketat' }
+                    ],
                     content: "[LIVE STREAM] Laporan langsung warga terkait {{ $issue['title'] }} di {{ $platform['name'] }}: mohon pengawasan kualitas dan transparansi anggaran di tingkat kelurahan diperketat."
                 })
             });
@@ -390,25 +497,9 @@
             const container = document.getElementById('humanFeedScroll');
             const card = document.createElement('article');
             card.className = 'post-item-card';
+            card.setAttribute('data-post-id', p.id);
             card.style.borderColor = 'var(--color-teal)';
-            card.innerHTML = `
-                <div class="post-item-top">
-                    <div>
-                        <a href="{{ route('accounts', ['handle' => '@rizalfauzi_econ']) }}" class="post-author-link">${p.author}</a>
-                        <span class="post-handle-text tabular">${p.handle} &middot; ${p.time}</span>
-                    </div>
-                    <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
-                        <span style="color: var(--color-teal-dark);">Orang (${p.human_score}%)</span>
-                        <span style="color: var(--color-text-muted);">&middot;</span>
-                        <span style="color: var(--color-red-dark);">- Negatif (${p.sentiment_conf}%)</span>
-                    </div>
-                </div>
-                <p class="post-body-text">${p.text}</p>
-                <div class="post-item-footer tabular">
-                    <span>${p.likes} suka &middot; ${p.reposts} repost</span>
-                    <a href="${p.url}" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
-                </div>
-            `;
+            card.innerHTML = renderPostCardHtml(p, false);
             container.insertBefore(card, container.firstChild);
             showToast("Postingan warga dianalisis & disimpan ke PostgreSQL (#" + p.id + ")");
         } catch (e) {
@@ -430,7 +521,12 @@
                     platform: "{{ $platformKey }}",
                     author_name: 'Bot Amplifier #409',
                     author_handle: '@sahabat_negeri77',
-                    force_bot: true,
+                    ai_sentiment: 'Positif',
+                    ai_bot_score: 92.5,
+                    ai_bot_reason: 'Terdeteksi pola amplifikasi seragam dan repetisi tagar oleh AI Qwen.',
+                    ai_institutions: [
+                        { lembaga: 'Pemerintah Pusat', sentimen: 'Positif', alasan: 'Narasi dukungan terkoordinasi' }
+                    ],
                     content: "[LIVE STREAM] Dukungan penuh 100% untuk {{ $issue['title'] }}! Solusi sukses menuju Indonesia Maju! #SukseskanProgramNasional #IndonesiaEmas"
                 })
             });
@@ -440,31 +536,57 @@
             const container = document.getElementById('botFeedScroll');
             const card = document.createElement('article');
             card.className = 'post-item-card';
+            card.setAttribute('data-post-id', p.id);
             card.style.borderColor = 'var(--color-red)';
-            card.innerHTML = `
-                <div class="post-item-top">
-                    <div>
-                        <a href="{{ route('accounts', ['handle' => '@sahabat_negeri77']) }}" class="post-author-link">${p.author}</a>
-                        <span class="post-handle-text tabular">${p.handle} &middot; ${p.time}</span>
-                    </div>
-                    <div class="post-badges-group tabular" style="font-size: 12px; font-weight: 600; gap: 10px;">
-                        <span style="color: var(--color-text-secondary);">Bot (${p.bot_score}%)</span>
-                        <span style="color: var(--color-text-muted);">&middot;</span>
-                        <span style="color: var(--color-teal-dark);">+ Positif (${p.sentiment_conf}%)</span>
-                    </div>
-                </div>
-                <p class="post-body-text">${p.text}</p>
-                <div class="post-item-footer tabular">
-                    <span>${p.likes} suka &middot; ${p.reposts} repost</span>
-                    <a href="${p.url}" target="_blank" class="post-ext-link">Buka postingan asli ↗</a>
-                </div>
-            `;
+            card.innerHTML = renderPostCardHtml(p, true);
             container.insertBefore(card, container.firstChild);
             showToast("Postingan bot dianalisis & disimpan ke PostgreSQL (#" + p.id + ")");
         } catch (e) {
             showToast("Gagal menyimpan postingan");
         }
     }
+
+    // Live Polling setiap 8 detik untuk menangkap komentar baru dari AI Agent Qwen di JupyterHub
+    async function pollFeedLiveStats() {
+        try {
+            const url = "{{ route('api.live-stats') }}?issue_slug={{ urlencode($issue['slug']) }}&platform={{ urlencode($platformKey) }}&sentiment={{ urlencode($sentimentFilter) }}";
+            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const humanContainer = document.getElementById('humanFeedScroll');
+            if (Array.isArray(data.human_posts) && humanContainer) {
+                data.human_posts.slice().reverse().forEach(p => {
+                    if (!document.querySelector(`[data-post-id="${p.id}"]`)) {
+                        const card = document.createElement('article');
+                        card.className = 'post-item-card';
+                        card.setAttribute('data-post-id', p.id);
+                        card.style.borderColor = 'var(--color-teal)';
+                        card.innerHTML = renderPostCardHtml(p, false);
+                        humanContainer.insertBefore(card, humanContainer.firstChild);
+                    }
+                });
+            }
+
+            const botContainer = document.getElementById('botFeedScroll');
+            if (Array.isArray(data.bot_posts) && botContainer) {
+                data.bot_posts.slice().reverse().forEach(p => {
+                    if (!document.querySelector(`[data-post-id="${p.id}"]`)) {
+                        const card = document.createElement('article');
+                        card.className = 'post-item-card';
+                        card.setAttribute('data-post-id', p.id);
+                        card.style.borderColor = 'var(--color-red)';
+                        card.innerHTML = renderPostCardHtml(p, true);
+                        botContainer.insertBefore(card, botContainer.firstChild);
+                    }
+                });
+            }
+        } catch (err) {
+            // Silent fail on network hiccup
+        }
+    }
+
+    setInterval(pollFeedLiveStats, 8000);
 </script>
 @endsection
 

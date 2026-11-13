@@ -584,36 +584,36 @@
         </div>
 
         @foreach($issues as $index => $issue)
-            <article class="issue-item {{ $index === 0 ? 'is-lead is-expanded' : '' }}" data-title="{{ strtolower($issue['title'] . ' ' . $issue['subtitle']) }}">
+            <article class="issue-item {{ $index === 0 ? 'is-lead is-expanded' : '' }}" data-issue-slug="{{ $issue['slug'] }}" data-title="{{ strtolower($issue['title'] . ' ' . $issue['subtitle']) }}">
                 <div class="issue-row-header" onclick="toggleExpand(this)">
-                    <div class="issue-avatar tabular">{{ $issue['rank'] }}</div>
+                    <div class="issue-avatar tabular js-issue-rank">{{ $issue['rank'] }}</div>
                     <div class="issue-primary">
                         <div class="issue-name">{{ $issue['title'] }}</div>
                     </div>
 
                     <div class="bar-group-box hide-on-tablet">
                         <div class="bar-labels">
-                            <span>Orang {{ number_format($issue['human_pct'], 1) }}%</span>
-                            <span>Bot {{ number_format($issue['bot_pct'], 1) }}%</span>
+                            <span class="js-human-pct">Orang {{ number_format($issue['human_pct'], 1) }}%</span>
+                            <span class="js-bot-pct">Bot {{ number_format($issue['bot_pct'], 1) }}%</span>
                         </div>
                         <div class="bar-track">
-                            <div class="bar-fill-teal" style="width: {{ $issue['human_pct'] }}%;"></div>
-                            <div class="bar-fill-slate" style="width: {{ $issue['bot_pct'] }}%;"></div>
+                            <div class="bar-fill-teal js-human-bar" style="width: {{ $issue['human_pct'] }}%;"></div>
+                            <div class="bar-fill-slate js-bot-bar" style="width: {{ $issue['bot_pct'] }}%;"></div>
                         </div>
                     </div>
 
                     <div class="bar-group-box hide-on-tablet">
                         <div class="bar-labels">
-                            <span>+{{ number_format($issue['pos_pct'], 1) }}% Pos</span>
-                            <span>{{ number_format($issue['neg_pct'], 1) }}% Neg</span>
+                            <span class="js-pos-pct">+{{ number_format($issue['pos_pct'], 1) }}% Pos</span>
+                            <span class="js-neg-pct">{{ number_format($issue['neg_pct'], 1) }}% Neg</span>
                         </div>
                         <div class="bar-track">
-                            <div class="bar-fill-teal" style="width: {{ $issue['pos_pct'] }}%;"></div>
-                            <div class="bar-fill-slate" style="width: {{ $issue['neg_pct'] }}%;"></div>
+                            <div class="bar-fill-teal js-pos-bar" style="width: {{ $issue['pos_pct'] }}%;"></div>
+                            <div class="bar-fill-slate js-neg-bar" style="width: {{ $issue['neg_pct'] }}%;"></div>
                         </div>
                     </div>
 
-                    <div class="tabular" style="font-weight: 600; font-size: 13.5px; text-align: right;">
+                    <div class="tabular js-total-posts" style="font-weight: 600; font-size: 13.5px; text-align: right;">
                         {{ number_format($issue['total_posts'], 0, ',', '.') }} post
                     </div>
 
@@ -729,17 +729,74 @@
             });
             const data = await res.json();
             if (data.status === 'ok' && data.kpi) {
-                document.getElementById('kpiTotalSampel').innerText = data.kpi.total_posts.toLocaleString('id-ID');
-                document.getElementById('kpiHumanPosts').innerText = data.kpi.human_posts.toLocaleString('id-ID');
-                document.getElementById('kpiBotPosts').innerText = data.kpi.bot_posts.toLocaleString('id-ID');
-                document.getElementById('kpiHumanPct').innerText = data.kpi.human_pct.toFixed(1).replace('.', ',') + '%';
-                document.getElementById('kpiBotPct').innerText = data.kpi.bot_pct.toFixed(1).replace('.', ',') + '%';
+                applyKpiAndIssuesUpdate(data.kpi, data.issue ? [data.issue] : []);
                 showToast("Tersimpan & dihitung ulang di PostgreSQL (ID #" + data.post.id + ")");
             }
         } catch (e) {
             showToast("Gagal menyimpan stream");
         }
     }
+
+    function applyKpiAndIssuesUpdate(kpi, issuesList) {
+        if (kpi) {
+            document.getElementById('kpiTotalSampel').innerText = Number(kpi.total_posts).toLocaleString('id-ID');
+            document.getElementById('kpiHumanPosts').innerText = Number(kpi.human_posts).toLocaleString('id-ID');
+            document.getElementById('kpiBotPosts').innerText = Number(kpi.bot_posts).toLocaleString('id-ID');
+            document.getElementById('kpiHumanPct').innerText = Number(kpi.human_pct).toFixed(1).replace('.', ',') + '%';
+            document.getElementById('kpiBotPct').innerText = Number(kpi.bot_pct).toFixed(1).replace('.', ',') + '%';
+            if (kpi.top_issue_title) {
+                document.getElementById('kpiTopTitle').innerText = kpi.top_issue_title;
+            }
+            if (typeof kpi.top_issue_share !== 'undefined') {
+                document.getElementById('kpiTopShare').innerText = Number(kpi.top_issue_share).toFixed(1).replace('.', ',') + '% porsi';
+            }
+        }
+
+        if (Array.isArray(issuesList)) {
+            issuesList.forEach(iss => {
+                const row = document.querySelector(`.issue-item[data-issue-slug="${iss.slug}"]`);
+                if (!row) return;
+                const totalEl = row.querySelector('.js-total-posts');
+                if (totalEl) totalEl.innerText = Number(iss.total_posts).toLocaleString('id-ID') + ' post';
+
+                const hPctEl = row.querySelector('.js-human-pct');
+                const bPctEl = row.querySelector('.js-bot-pct');
+                if (hPctEl) hPctEl.innerText = `Orang ${Number(iss.human_pct).toFixed(1)}%`;
+                if (bPctEl) bPctEl.innerText = `Bot ${Number(iss.bot_pct).toFixed(1)}%`;
+
+                const hBar = row.querySelector('.js-human-bar');
+                const bBar = row.querySelector('.js-bot-bar');
+                if (hBar) hBar.style.width = `${iss.human_pct}%`;
+                if (bBar) bBar.style.width = `${iss.bot_pct}%`;
+
+                const posPctEl = row.querySelector('.js-pos-pct');
+                const negPctEl = row.querySelector('.js-neg-pct');
+                if (posPctEl) posPctEl.innerText = `+${Number(iss.pos_pct).toFixed(1)}% Pos`;
+                if (negPctEl) negPctEl.innerText = `${Number(iss.neg_pct).toFixed(1)}% Neg`;
+
+                const posBar = row.querySelector('.js-pos-bar');
+                const negBar = row.querySelector('.js-neg-bar');
+                if (posBar) posBar.style.width = `${iss.pos_pct}%`;
+                if (negBar) negBar.style.width = `${iss.neg_pct}%`;
+            });
+        }
+    }
+
+    // Live Polling setiap 8 detik agar KPI & volume isu otomatis bertambah saat AI Agent Qwen mengirim data
+    async function pollDashboardLiveStats() {
+        try {
+            const res = await fetch("{{ route('api.live-stats') }}", { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.status === 'ok') {
+                applyKpiAndIssuesUpdate(data.kpi, data.issues || []);
+            }
+        } catch (err) {
+            // Abaikan gangguan jaringan sementara
+        }
+    }
+
+    setInterval(pollDashboardLiveStats, 8000);
 
     function filterIssues() {
         const q = document.getElementById('searchInput').value.toLowerCase();

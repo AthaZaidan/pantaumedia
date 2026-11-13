@@ -270,7 +270,7 @@
                             <span class="tabular" style="font-size: 13.5px; font-weight: 600; color: var(--color-teal-dark);">Warga Organik (Skor Bot: {{ $profile['bot_score'] }}%)</span>
                         @endif
 
-                        @if(count($accountsList) > 1 && isset($profile['id']))
+                        @if(isset($profile['id']))
                             <form action="{{ route('accounts.destroy', $profile['id']) }}" method="POST" onsubmit="return confirm('Hapus akun {{ $profile['handle'] }} dari daftar audit?')">
                                 @csrf
                                 @method('DELETE')
@@ -369,6 +369,12 @@
                             Belum ada riwayat postingan untuk akun ini di tabel social_posts.
                         </div>
                     @endforelse
+                </div>
+            </main>
+        @else
+            <main class="profile-detail-card">
+                <div style="padding: 24px; text-align: center; color: var(--color-text-secondary); font-size: 13.5px;">
+                    Belum ada akun terpantau di database. Akun akan otomatis tercatat saat AI Agent Qwen mengirim data melalui <code>/api/ingest</code> atau <code>/api/ingest-batch</code>, atau Anda dapat mengaudit akun secara manual melalui formulir di sebelah kiri.
                 </div>
             </main>
         @endif

@@ -259,6 +259,26 @@
                     </button>
                 </form>
             </aside>
+
+            <!-- Form 3: Sinkronisasi / Upload File stream_analisis_sospem.json dari JupyterHub AI Qwen -->
+            <aside class="manage-card">
+                <div class="manage-card-head">
+                    <span>3. Sinkronisasi JSON AI Qwen (JupyterHub)</span>
+                </div>
+                <form action="{{ route('issues.sync-json') }}" method="POST" enctype="multipart/form-data" class="manage-form-body">
+                    @csrf
+                    <div class="field-group">
+                        <label for="json_file" class="field-label">Upload File stream_analisis_sospem.json (Opsional)</label>
+                        <input type="file" id="json_file" name="json_file" accept=".json,application/json" class="field-input">
+                    </div>
+                    <div style="font-size: 11.5px; color: var(--color-text-muted); line-height: 1.45;">
+                        Jika file tidak dipilih, sistem otomatis membaca <code>stream_analisis_sospem.json</code> di direktori utama proyek dan menyinkronkan komentar baru tanpa duplikasi.
+                    </div>
+                    <button type="submit" class="btn-clean btn-primary" style="justify-content: center; margin-top: 2px; padding: 8px 14px;">
+                        Sinkronkan Data AI Qwen Sekarang
+                    </button>
+                </form>
+            </aside>
         </div>
 
         <!-- Kolom Kanan: Daftar Isu Aktif di PostgreSQL -->

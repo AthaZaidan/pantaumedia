@@ -360,6 +360,44 @@
             @endforeach
         </section>
     </div>
+
+    <!-- 6. MONITORING SENTIMEN PER LEMBAGA PEMERINTAHAN (EKSTRAKSI AI QWEN JUPYTERHUB) -->
+    <section class="monitor-table-card">
+        <div class="monitor-table-head">
+            <span>Monitoring Sentimen per Lembaga Pemerintahan (AI Qwen JupyterHub)</span>
+            <span style="font-size: 12px; font-weight: 500; color: var(--color-text-secondary);">Rincian Positif / Negatif / Netral</span>
+        </div>
+
+        @forelse($institutionMonitor ?? [] as $inst)
+            <div class="monitor-row">
+                <div>
+                    <div style="font-size: 13.5px; font-weight: 600; color: var(--color-text-primary);">
+                        {{ $inst['lembaga'] }}
+                        <span class="tabular" style="font-size: 12px; font-weight: 500; color: var(--color-text-secondary); margin-left: 6px;">
+                            ({{ number_format($inst['total'], 0, ',', '.') }} sebutan)
+                        </span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--color-text-secondary);">
+                        Ringkasan AI: {{ $inst['sample_reason'] }}
+                    </div>
+                </div>
+
+                <div class="tabular" style="display: flex; align-items: center; gap: 14px; font-size: 12.5px; font-weight: 600;">
+                    <span style="color: var(--color-teal-dark);">+{{ $inst['pos'] }} Positif</span>
+                    <span style="color: var(--color-text-muted);">&middot;</span>
+                    <span style="color: var(--color-red-dark);">-{{ $inst['neg'] }} Negatif</span>
+                    @if($inst['netral'] > 0)
+                        <span style="color: var(--color-text-muted);">&middot;</span>
+                        <span style="color: var(--color-text-secondary);">{{ $inst['netral'] }} Netral</span>
+                    @endif
+                </div>
+            </div>
+        @empty
+            <div class="monitor-row" style="justify-content: center; color: var(--color-text-muted); font-size: 12.5px;">
+                Belum ada rincian lembaga dari AI Qwen pada filter ini. Kirim parameter ai_institutions ke POST /api/ingest atau sinkronkan stream_analisis_sospem.json.
+            </div>
+        @endforelse
+    </section>
 @endsection
 
 @section('scripts')

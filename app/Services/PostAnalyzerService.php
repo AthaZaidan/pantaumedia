@@ -31,27 +31,183 @@ class PostAnalyzerService
     ];
 
     /**
-     * Analisis teks postingan secara otomatis (Heuristik Bot + Sentimen), sinkronkan ke monitored_accounts,
-     * simpan ke social_posts, dan hitung ulang agregasi statistik isu di PostgreSQL.
+     * Cocokkan teks postingan atau judul berita (source_news) dengan daftar Issue di PostgreSQL.
+     * Jika issue_slug tidak dikirim atau bernilai "auto", cari berdasarkan keywords/title,
+     * dan jika tidak ada yang cocok, fallback ke isu dengan rank = 1 agar tidak ada data yang gagal masuk.
      *
      * @param  array<string, mixed>  $payload
      */
-    public function ingestAndAnalyze(Issue $issue, array $payload): SocialPost
+    public function resolveIssue(array $payload): Issue
     {
-        $content = trim((string) ($payload['content'] ?? ''));
-        $rawHandle = trim((string) ($payload['author_handle'] ?? '@warga_net'));
+        $slug = trim((string) ($payload['issue_slug'] ?? ''));
+
+        if ($slug !== '' && strtolower($slug) !== 'auto') {
+            $found = Issue::where('slug', $slug)->first();
+            if ($found !== null) {
+                return $found;
+            }
+        }
+
+        if (! empty($payload['issue_id'])) {
+            $foundById = Issue::find($payload['issue_id']);
+            if ($foundById !== null) {
+                return $foundById;
+            }
+        }
+
+        $searchCorpus = strtolower(trim(
+            ((string) ($payload['content'] ?? $payload['komentar'] ?? $payload['text'] ?? '')).' '.
+            ((string) ($payload['source_news'] ?? $payload['judul_berita'] ?? ''))
+        ));
+
+        if ($searchCorpus !== '') {
+            $allIssues = Issue::orderBy('rank')->get();
+            foreach ($allIssues as $issue) {
+                $keywords = $issue->keywords ?? [];
+                $keywords[] = $issue->title;
+
+                foreach ($keywords as $kw) {
+                    $kwClean = strtolower(trim((string) $kw));
+                    if ($kwClean !== '' && str_contains($searchCorpus, $kwClean)) {
+                        return $issue;
+                    }
+                }
+            }
+        }
+
+        return Issue::orderBy('rank')->orderByDesc('total_posts')->firstOrFail();
+    }
+
+    /**
+     * Normalisasi kode platform agar selalu masuk ke salah satu dari 3 kanal utama: meta, x, atau tiktok.
+     */
+    public function normalizePlatform(string $rawPlatform): string
+    {
+        $lower = strtolower(trim($rawPlatform));
+
+        if (in_array($lower, ['meta', 'ig', 'instagram', 'fb', 'facebook'], true)) {
+            return 'meta';
+        }
+
+        if (in_array($lower, ['tiktok', 'youtube', 'yt', 'tt'], true)) {
+            return 'tiktok';
+        }
+
+        return 'x';
+    }
+
+    /**
+     * Normalisasi nilai sentimen dari AI Qwen (Positif/Negatif/Netral atau positive/negative/neutral).
+     */
+    public function normalizeAiSentiment(?string $rawSentiment): ?string
+    {
+        if ($rawSentiment === null || trim($rawSentiment) === '') {
+            return null;
+        }
+
+        $lower = strtolower(trim($rawSentiment));
+
+        if (in_array($lower, ['positive', 'positif', 'pos', 'pro'], true)) {
+            return 'positive';
+        }
+
+        if (in_array($lower, ['negative', 'negatif', 'neg', 'kontra', 'kritis'], true)) {
+            return 'negative';
+        }
+
+        if (in_array($lower, ['neutral', 'netral'], true)) {
+            return 'neutral';
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalisasi array ai_institutions dari payload (mendukung array langsung maupun JSON string).
+     *
+     * @return array<int, array{lembaga: string, sentimen: string, alasan: string}>
+     */
+    public function normalizeAiInstitutions(mixed $rawInstitutions): array
+    {
+        if (is_string($rawInstitutions) && trim($rawInstitutions) !== '') {
+            $decoded = json_decode($rawInstitutions, true);
+            $rawInstitutions = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($rawInstitutions)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($rawInstitutions as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $lembaga = trim((string) ($item['lembaga'] ?? $item['institution'] ?? $item['nama'] ?? ''));
+            if ($lembaga === '') {
+                continue;
+            }
+
+            $sentimenRaw = (string) ($item['sentimen'] ?? $item['sentiment'] ?? 'Netral');
+            $alasan = trim((string) ($item['alasan'] ?? $item['reason'] ?? ''));
+
+            $normalized[] = [
+                'lembaga' => $lembaga,
+                'sentimen' => ucfirst(strtolower(trim($sentimenRaw))),
+                'alasan' => $alasan,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Analisis postingan dengan memprioritaskan hasil AI Qwen (JupyterHub) jika tersedia,
+     * sinkronkan ke monitored_accounts, simpan ke social_posts, dan hitung ulang statistik isu.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function ingestAndAnalyze(?Issue $issue, array $payload, bool $recalculateImmediately = true): SocialPost
+    {
+        $issue ??= $this->resolveIssue($payload);
+
+        $content = trim((string) ($payload['content'] ?? $payload['komentar'] ?? $payload['text'] ?? ''));
+        $authorName = trim((string) ($payload['author_name'] ?? $payload['username'] ?? $payload['penulis'] ?? 'Warga Netizen'));
+        $rawHandle = trim((string) ($payload['author_handle'] ?? $payload['handle'] ?? '@'.strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $authorName) ?: 'warga_net')));
         $handle = str_starts_with($rawHandle, '@') ? $rawHandle : '@'.$rawHandle;
-        $authorName = trim((string) ($payload['author_name'] ?? 'Warga Netizen'));
-        $platform = strtolower((string) ($payload['platform'] ?? 'x'));
+        $platform = $this->normalizePlatform((string) ($payload['platform'] ?? 'x'));
+
+        // Ambil parameter AI Qwen dari JupyterHub jika tersedia
+        $rawAiBotScore = $payload['ai_bot_score'] ?? $payload['skor_bot'] ?? null;
+        $hasAiBotScore = $rawAiBotScore !== null && $rawAiBotScore !== '';
+        $aiBotScore = $hasAiBotScore ? round(max(0.0, min(100.0, (float) $rawAiBotScore)), 1) : null;
+
+        $aiBotReason = trim((string) ($payload['ai_bot_reason'] ?? $payload['alasan_bot'] ?? ''));
+        $aiSentiment = $this->normalizeAiSentiment(
+            isset($payload['ai_sentiment']) ? (string) $payload['ai_sentiment']
+                : (isset($payload['sentimen_umum']) ? (string) $payload['sentimen_umum'] : null)
+        );
+        $aiInstitutions = $this->normalizeAiInstitutions(
+            $payload['ai_institutions'] ?? $payload['analisis_lembaga'] ?? $payload['institutions'] ?? []
+        );
 
         // 1. Cek apakah akun sudah ada di tabel monitored_accounts
         $account = MonitoredAccount::where('handle', $handle)->first();
 
-        // 2. Hitung Skor Kemungkinan Bot (0 - 100%) beserta alasan heuristiknya
-        [$botScore, $reasons] = $this->evaluateBotHeuristics($content, $handle, $account, $payload['force_bot'] ?? null);
+        // 2. Prioritaskan nilai ai_bot_score & ai_bot_reason dari AI Qwen; gunakan heuristik hanya sebagai fallback
+        if ($aiBotScore !== null) {
+            $botScore = $aiBotScore;
+            $reasons = $aiBotReason !== ''
+                ? [$aiBotReason]
+                : ($account?->reasons ?: ['Skor probabilitas bot ditetapkan oleh AI Agent Qwen (JupyterHub).']);
+        } else {
+            [$botScore, $reasons] = $this->evaluateBotHeuristics($content, $handle, $account, $payload['force_bot'] ?? null);
+        }
+
         $isBot = $botScore >= 60.0;
 
-        // 3. Sinkronkan / buat otomatis profil akun di tabel monitored_accounts PostgreSQL
+        // 3. Sinkronkan / perbarui profil akun di tabel monitored_accounts PostgreSQL
         $platformLabel = match ($platform) {
             'meta' => 'Meta (IG & FB)',
             'tiktok' => 'TikTok & YouTube',
@@ -77,14 +233,35 @@ class PostAnalyzerService
             $topics = $account->topics ?? [];
             if (! in_array($issue->title, $topics, true)) {
                 $topics[] = $issue->title;
-                $account->update(['topics' => $topics]);
             }
+
+            $existingReasons = $account->reasons ?? [];
+            if ($aiBotReason !== '' && ! in_array($aiBotReason, $existingReasons, true)) {
+                array_unshift($existingReasons, $aiBotReason);
+            }
+
+            $account->update([
+                'is_bot' => $aiBotScore !== null ? $isBot : $account->is_bot,
+                'bot_score' => $aiBotScore !== null ? $botScore : $account->bot_score,
+                'reasons' => ! empty($existingReasons) ? array_slice($existingReasons, 0, 5) : $reasons,
+                'topics' => $topics,
+            ]);
         }
 
-        // 4. Klasifikasi Sentimen Bahasa Indonesia (positive / negative + confidence)
-        [$sentiment, $sentimentConf] = $this->analyzeSentiment($content, $payload['force_sentiment'] ?? null);
+        // 4. Prioritaskan ai_sentiment dari AI Qwen; gunakan leksikon hanya sebagai fallback
+        if ($aiSentiment !== null) {
+            // Untuk menjaga kompatibilitas agregasi biner Positif vs Negatif, neutral disimpan dengan metadata asli
+            $sentiment = $aiSentiment === 'neutral' ? 'positive' : $aiSentiment;
+            $sentimentConf = (float) ($payload['sentiment_conf'] ?? 95.4);
+        } else {
+            [$sentiment, $sentimentConf] = $this->analyzeSentiment($content, $payload['force_sentiment'] ?? null);
+        }
 
-        // 5. Simpan ke tabel social_posts di PostgreSQL
+        $likesCount = (int) ($payload['likes_count'] ?? $payload['likes'] ?? 0);
+        $repostsCount = (int) ($payload['reposts_count'] ?? $payload['reposts'] ?? 0);
+        $sourceUrl = trim((string) ($payload['source_url'] ?? $payload['post_url'] ?? $payload['url'] ?? 'https://x.com'));
+
+        // 5. Simpan ke tabel social_posts di PostgreSQL lengkap dengan metadata AI Qwen
         $post = SocialPost::create([
             'issue_id' => $issue->id,
             'monitored_account_id' => $account->id,
@@ -96,24 +273,30 @@ class PostAnalyzerService
             'bot_score' => $botScore,
             'sentiment' => $sentiment,
             'sentiment_conf' => $sentimentConf,
-            'likes' => (int) ($payload['likes'] ?? ($isBot ? rand(80, 450) : rand(5, 120))),
-            'reposts' => (int) ($payload['reposts'] ?? ($isBot ? rand(50, 320) : rand(1, 35))),
-            'post_url' => (string) ($payload['post_url'] ?? 'https://x.com'),
+            'likes' => $likesCount,
+            'reposts' => $repostsCount,
+            'post_url' => $sourceUrl !== '' ? $sourceUrl : 'https://x.com',
             'posted_at' => $payload['posted_at'] ?? now(),
             'metadata' => [
-                'ingested_via' => 'realtime_analyzer',
+                'ingested_via' => ($aiBotScore !== null || $aiSentiment !== null || ! empty($aiInstitutions)) ? 'qwen_jupyterhub' : 'realtime_analyzer',
+                'ai_sentiment_raw' => $aiSentiment,
+                'ai_bot_reason' => $aiBotReason !== '' ? $aiBotReason : null,
+                'ai_institutions' => $aiInstitutions,
+                'source_news' => $payload['source_news'] ?? $payload['judul_berita'] ?? null,
                 'hashtag_count' => preg_match_all('/#\w+/u', $content),
             ],
         ]);
 
         // 6. Hitung ulang statistik isu secara real dari isi tabel social_posts di PostgreSQL
-        $this->recalculateIssueStats($issue);
+        if ($recalculateImmediately) {
+            $this->recalculateIssueStats($issue);
+        }
 
         return $post;
     }
 
     /**
-     * Evaluasi skor bot sekaligus menghasilkan daftar alasan heuristik terukur.
+     * Evaluasi skor bot sekaligus menghasilkan daftar alasan heuristik terukur (Fallback jika AI kosong).
      *
      * @return array{0: float, 1: array<int, string>}
      */
@@ -178,17 +361,13 @@ class PostAnalyzerService
         $posts = SocialPost::where('issue_id', $issue->id)->get();
         $total = $posts->count();
 
-        if ($total === 0) {
-            return;
-        }
-
         $humanCount = $posts->where('is_bot', false)->count();
         $posCount = $posts->where('sentiment', 'positive')->count();
 
-        $humanPct = round(($humanCount / $total) * 100, 1);
-        $botPct = round(100 - $humanPct, 1);
-        $posPct = round(($posCount / $total) * 100, 1);
-        $negPct = round(100 - $posPct, 1);
+        $humanPct = $total > 0 ? round(($humanCount / $total) * 100, 1) : 0.0;
+        $botPct = $total > 0 ? round(100 - $humanPct, 1) : 0.0;
+        $posPct = $total > 0 ? round(($posCount / $total) * 100, 1) : 0.0;
+        $negPct = $total > 0 ? round(100 - $posPct, 1) : 0.0;
 
         $platformNames = [
             'meta' => 'Meta (IG & FB)',
@@ -207,11 +386,11 @@ class PostAnalyzerService
             $hTotal = $platHumans->count();
             $bTotal = $platBots->count();
 
-            $hPos = $hTotal > 0 ? round(($platHumans->where('sentiment', 'positive')->count() / $hTotal) * 100, 1) : 50.0;
-            $hNeg = $hTotal > 0 ? round(100 - $hPos, 1) : 50.0;
+            $hPos = $hTotal > 0 ? round(($platHumans->where('sentiment', 'positive')->count() / $hTotal) * 100, 1) : 0.0;
+            $hNeg = $hTotal > 0 ? round(100 - $hPos, 1) : 0.0;
 
-            $bPos = $bTotal > 0 ? round(($platBots->where('sentiment', 'positive')->count() / $bTotal) * 100, 1) : 50.0;
-            $bNeg = $bTotal > 0 ? round(100 - $bPos, 1) : 50.0;
+            $bPos = $bTotal > 0 ? round(($platBots->where('sentiment', 'positive')->count() / $bTotal) * 100, 1) : 0.0;
+            $bNeg = $bTotal > 0 ? round(100 - $bPos, 1) : 0.0;
 
             $platformsData[$platKey] = [
                 'name' => $platName,
@@ -221,7 +400,7 @@ class PostAnalyzerService
                 'human_neg' => $hNeg,
                 'bot_pos' => $bPos,
                 'bot_neg' => $bNeg,
-                'sufficient' => $platTotal > 0,
+                'sufficient' => true,
             ];
         }
 
@@ -249,7 +428,7 @@ class PostAnalyzerService
     }
 
     /**
-     * Analisis sentimen teks bahasa Indonesia.
+     * Analisis sentimen teks bahasa Indonesia (Fallback jika AI kosong).
      *
      * @return array{0: string, 1: float}
      */

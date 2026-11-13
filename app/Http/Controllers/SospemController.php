@@ -9,8 +9,10 @@ use App\Services\PostAnalyzerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
+use Throwable;
 
 class SospemController extends Controller
 {
@@ -271,54 +273,263 @@ class SospemController extends Controller
      */
     private function formatPostForView(SocialPost $post, string $platformName): array
     {
+        $metadata = is_array($post->metadata) ? $post->metadata : [];
+
         return [
             'id' => $post->id,
             'author' => $post->author_name,
             'handle' => $post->author_handle,
             'platform' => $platformName,
             'time' => $post->posted_at ? $post->posted_at->diffForHumans() : 'Baru saja',
+            'is_bot' => (bool) $post->is_bot,
             'bot_score' => (float) $post->bot_score,
+            'human_score' => round(100 - (float) $post->bot_score, 1),
             'sentiment' => $post->sentiment,
             'sentiment_conf' => (float) $post->sentiment_conf,
             'text' => $post->content,
             'likes' => $post->likes,
             'reposts' => $post->reposts,
             'url' => $post->post_url ?? 'https://x.com',
+            'ai_institutions' => $metadata['ai_institutions'] ?? [],
+            'ai_bot_reason' => $metadata['ai_bot_reason'] ?? null,
+            'ai_sentiment_raw' => $metadata['ai_sentiment_raw'] ?? null,
+            'source_news' => $metadata['source_news'] ?? null,
         ];
     }
 
     /**
-     * Endpoint Ingest Real-Time: Menganalisis skor bot & sentimen, menyimpan ke PostgreSQL,
-     * dan menghitung ulang agregasi KPI & isu secara real-time.
+     * Endpoint Ingest Real-Time: Menganalisis skor bot & sentimen (prioritas AI Qwen JupyterHub),
+     * menyimpan ke PostgreSQL, dan menghitung ulang agregasi KPI & isu secara real-time.
      */
     public function ingest(Request $request, PostAnalyzerService $analyzer): JsonResponse
     {
-        $issueSlug = (string) $request->input('issue_slug', 'makan-bergizi-gratis');
-        $issue = Issue::where('slug', $issueSlug)->first() ?? Issue::orderBy('rank')->firstOrFail();
+        $payload = $request->all();
+        $issue = $analyzer->resolveIssue($payload);
 
-        $post = $analyzer->ingestAndAnalyze($issue, $request->all());
+        $post = $analyzer->ingestAndAnalyze($issue, $payload);
         $analyzer->rerankAllIssues();
+
+        $platformNames = [
+            'meta' => 'Meta (FB & IG)',
+            'x' => 'X & Threads',
+            'tiktok' => 'TikTok & Shorts',
+        ];
+        $platformLabel = $platformNames[$post->platform] ?? 'X & Threads';
 
         return response()->json([
             'status' => 'ok',
             'kpi' => $this->buildKpiStats(),
             'issue' => $this->formatIssueForView($issue->fresh()),
-            'post' => [
-                'id' => $post->id,
-                'author' => $post->author_name,
-                'handle' => $post->author_handle,
-                'time' => 'Baru saja',
-                'is_bot' => $post->is_bot,
-                'bot_score' => (float) $post->bot_score,
-                'human_score' => round(100 - (float) $post->bot_score, 1),
-                'sentiment' => $post->sentiment,
-                'sentiment_conf' => (float) $post->sentiment_conf,
-                'text' => $post->content,
-                'likes' => $post->likes,
-                'reposts' => $post->reposts,
-                'url' => $post->post_url ?? 'https://x.com',
-            ],
+            'post' => $this->formatPostForView($post, $platformLabel),
         ]);
+    }
+
+    /**
+     * Endpoint Batch Sync (POST /api/ingest-batch): Menerima array JSON banyak komentar
+     * (format stream_analisis_sospem.json dari JupyterHub) dan menyimpan ke database tanpa duplikasi.
+     */
+    public function ingestBatch(Request $request, PostAnalyzerService $analyzer): JsonResponse
+    {
+        $rawPayload = $request->all();
+
+        if (isset($rawPayload['items']) && is_array($rawPayload['items'])) {
+            $items = $rawPayload['items'];
+        } elseif (isset($rawPayload['data']) && is_array($rawPayload['data'])) {
+            $items = $rawPayload['data'];
+        } elseif (array_is_list($rawPayload)) {
+            $items = $rawPayload;
+        } else {
+            $items = [];
+        }
+
+        if (empty($items) && file_exists(base_path('stream_analisis_sospem.json'))) {
+            $decoded = json_decode((string) file_get_contents(base_path('stream_analisis_sospem.json')), true);
+            if (is_array($decoded)) {
+                $items = isset($decoded['items']) && is_array($decoded['items']) ? $decoded['items'] : $decoded;
+            }
+        }
+
+        $result = $this->processBatchItems($items, $analyzer);
+
+        return response()->json([
+            'status' => 'ok',
+            'inserted' => $result['inserted'],
+            'skipped_duplicates' => $result['skipped'],
+            'kpi' => $this->buildKpiStats(),
+        ]);
+    }
+
+    /**
+     * Sinkronisasi atau upload file stream_analisis_sospem.json dari halaman Kelola Isu.
+     */
+    public function syncJsonFile(Request $request, PostAnalyzerService $analyzer): RedirectResponse
+    {
+        $items = [];
+
+        if ($request->hasFile('json_file') && $request->file('json_file')->isValid()) {
+            $rawJson = (string) file_get_contents($request->file('json_file')->getRealPath());
+            $decoded = json_decode($rawJson, true);
+            if (is_array($decoded)) {
+                $items = isset($decoded['items']) && is_array($decoded['items']) ? $decoded['items'] : $decoded;
+            }
+        } elseif (file_exists(base_path('stream_analisis_sospem.json'))) {
+            $rawJson = (string) file_get_contents(base_path('stream_analisis_sospem.json'));
+            $decoded = json_decode($rawJson, true);
+            if (is_array($decoded)) {
+                $items = isset($decoded['items']) && is_array($decoded['items']) ? $decoded['items'] : $decoded;
+            }
+        } else {
+            return redirect()
+                ->route('issues.index')
+                ->with('status', 'File stream_analisis_sospem.json tidak ditemukan di folder proyek dan tidak ada file yang diunggah.');
+        }
+
+        if (empty($items)) {
+            return redirect()
+                ->route('issues.index')
+                ->with('status', 'Format JSON kosong atau tidak valid.');
+        }
+
+        $result = $this->processBatchItems($items, $analyzer);
+
+        return redirect()
+            ->route('issues.index')
+            ->with('status', "Sinkronisasi JSON AI Qwen berhasil! {$result['inserted']} komentar baru ditambahkan, {$result['skipped']} duplikat dilewati.");
+    }
+
+    /**
+     * Proses loop array item JSON (mendukung format standar API maupun format mentah stream_analisis_sospem.json)
+     * dengan deduplikasi berdasarkan author_handle + content.
+     *
+     * @param  array<int, mixed>  $items
+     * @return array{inserted: int, skipped: int}
+     */
+    private function processBatchItems(array $items, PostAnalyzerService $analyzer): array
+    {
+        $inserted = 0;
+        $skipped = 0;
+        $affectedIssueIds = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            // Normalisasi jika format langsung dari stream_analisis_sospem.json (author, text, analisis_ai, dll.)
+            $content = trim((string) ($item['content'] ?? $item['text'] ?? $item['komentar'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $authorName = trim((string) ($item['author_name'] ?? $item['author'] ?? 'Anonim'));
+            $rawHandle = trim((string) ($item['author_handle'] ?? $item['handle'] ?? $authorName));
+            $cleanHandle = preg_replace('/[^a-zA-Z0-9_]/', '_', strtolower(ltrim($rawHandle, '@'))) ?: 'user';
+            $handle = str_starts_with($rawHandle, '@') && ! str_contains($rawHandle, ' ')
+                ? $rawHandle
+                : '@'.substr($cleanHandle, 0, 45);
+
+            $exists = SocialPost::where('author_handle', $handle)
+                ->where('content', $content)
+                ->exists();
+
+            if ($exists) {
+                $skipped++;
+
+                continue;
+            }
+
+            $aiBlock = isset($item['analisis_ai']) && is_array($item['analisis_ai']) ? $item['analisis_ai'] : [];
+            $normalizedPayload = [
+                'issue_slug' => $item['issue_slug'] ?? 'auto',
+                'platform' => $item['platform'] ?? 'tiktok',
+                'author_name' => $authorName,
+                'author_handle' => $handle,
+                'content' => $content,
+                'likes_count' => $item['likes_count'] ?? $item['likes'] ?? 0,
+                'reposts' => $item['reposts'] ?? 0,
+                'source_url' => $item['source_url'] ?? $item['url'] ?? null,
+                'source_news' => $item['source_news'] ?? $item['judul_berita'] ?? null,
+                'ai_sentiment' => $item['ai_sentiment'] ?? $aiBlock['sentimen_publik'] ?? $aiBlock['sentimen'] ?? null,
+                'ai_bot_score' => $item['ai_bot_score'] ?? $aiBlock['indikasi_bot_persen'] ?? $aiBlock['bot_score'] ?? null,
+                'ai_bot_reason' => $item['ai_bot_reason'] ?? $aiBlock['alasan_indikasi_bot'] ?? $aiBlock['alasan_bot'] ?? null,
+                'ai_institutions' => $item['ai_institutions'] ?? $aiBlock['sentimen_per_lembaga'] ?? $aiBlock['lembaga'] ?? [],
+            ];
+
+            $post = $analyzer->ingestAndAnalyze(null, $normalizedPayload, false);
+            $affectedIssueIds[$post->issue_id] = true;
+            $inserted++;
+        }
+
+        if (! empty($affectedIssueIds)) {
+            $issues = Issue::whereIn('id', array_keys($affectedIssueIds))->get();
+            foreach ($issues as $iss) {
+                $analyzer->recalculateIssueStats($iss);
+            }
+            $analyzer->rerankAllIssues();
+        }
+
+        return [
+            'inserted' => $inserted,
+            'skipped' => $skipped,
+        ];
+    }
+
+    /**
+     * Endpoint Ringan GET /api/live-stats untuk Live Polling (8 detik) di Dashboard & Feed.
+     */
+    public function liveStats(Request $request): JsonResponse
+    {
+        $response = [
+            'status' => 'ok',
+            'kpi' => $this->buildKpiStats(),
+            'issues' => $this->getIssuesFromDatabase(),
+        ];
+
+        $issueSlug = $request->query('issue_slug');
+        if (is_string($issueSlug) && $issueSlug !== '') {
+            $issueModel = Issue::where('slug', $issueSlug)->first() ?? Issue::orderBy('rank')->first();
+            $platformKey = strtolower((string) $request->query('platform', 'x'));
+            $sentimentFilter = (string) $request->query('sentiment', 'all');
+
+            if ($issueModel) {
+                $issueFormatted = $this->formatIssueForView($issueModel);
+                $platformData = $issueFormatted['platforms'][$platformKey] ?? [
+                    'name' => strtoupper($platformKey),
+                    'volume' => '0 post',
+                    'human_pos' => 50.0,
+                    'human_neg' => 50.0,
+                    'bot_pos' => 50.0,
+                    'bot_neg' => 50.0,
+                    'sufficient' => true,
+                ];
+
+                $baseQuery = SocialPost::where('issue_id', $issueModel->id)
+                    ->where('platform', $platformKey)
+                    ->orderByDesc('posted_at')
+                    ->orderByDesc('id');
+
+                if ($sentimentFilter !== 'all') {
+                    $baseQuery->where('sentiment', $sentimentFilter);
+                }
+
+                $response['issue'] = $issueFormatted;
+                $response['platform'] = $platformData;
+                $response['human_posts'] = (clone $baseQuery)
+                    ->where('is_bot', false)
+                    ->limit(15)
+                    ->get()
+                    ->map(fn (SocialPost $p): array => $this->formatPostForView($p, $platformData['name']))
+                    ->all();
+                $response['bot_posts'] = (clone $baseQuery)
+                    ->where('is_bot', true)
+                    ->limit(15)
+                    ->get()
+                    ->map(fn (SocialPost $p): array => $this->formatPostForView($p, $platformData['name']))
+                    ->all();
+            }
+        }
+
+        return response()->json($response);
     }
 
     /**
@@ -587,12 +798,52 @@ class SospemController extends Controller
             ->take(7)
             ->all();
 
+        // 9. Monitoring Sentimen per Lembaga Pemerintahan (Hasil Ekstraksi AI Qwen JupyterHub)
+        $instStats = [];
+        foreach ($posts as $p) {
+            $meta = is_array($p->metadata) ? $p->metadata : [];
+            $instList = $meta['ai_institutions'] ?? [];
+            if (! is_array($instList)) {
+                continue;
+            }
+            foreach ($instList as $inst) {
+                $lembaga = trim((string) ($inst['lembaga'] ?? ''));
+                if ($lembaga === '') {
+                    continue;
+                }
+                if (! isset($instStats[$lembaga])) {
+                    $instStats[$lembaga] = [
+                        'lembaga' => $lembaga,
+                        'total' => 0,
+                        'pos' => 0,
+                        'neg' => 0,
+                        'netral' => 0,
+                        'sample_reason' => (string) ($inst['alasan'] ?? '-'),
+                    ];
+                }
+                $instStats[$lembaga]['total']++;
+                $sent = strtolower((string) ($inst['sentiment_key'] ?? $inst['sentimen'] ?? ''));
+                if (str_contains($sent, 'pos')) {
+                    $instStats[$lembaga]['pos']++;
+                } elseif (str_contains($sent, 'neg')) {
+                    $instStats[$lembaga]['neg']++;
+                } else {
+                    $instStats[$lembaga]['netral']++;
+                }
+                if (! empty($inst['alasan'])) {
+                    $instStats[$lembaga]['sample_reason'] = (string) $inst['alasan'];
+                }
+            }
+        }
+        $institutionMonitor = collect($instStats)->sortByDesc('total')->values()->all();
+
         return view('analytics', [
             'issues' => $this->getIssuesFromDatabase(),
             'selectedSlug' => $selectedSlug,
             'selectedIssue' => $selectedIssue ? $this->formatIssueForView($selectedIssue) : null,
             'keywordMonitor' => $keywordMonitor,
             'topTriggerAccounts' => $topTriggerAccounts,
+            'institutionMonitor' => $institutionMonitor,
             'chartData' => [
                 'hourly_labels' => array_keys($buckets),
                 'hourly_human' => $hourlyHuman,
@@ -606,8 +857,8 @@ class SospemController extends Controller
                 'spectrum_labels' => array_keys($spectrumRanges),
                 'spectrum_counts' => $spectrumCounts,
                 'radar_labels' => ['Duplikasi Teks', 'Kepadatan Tagar', 'Sinkronisitas Jam', 'Rasio Following', 'Amplifikasi Repost'],
-                'radar_bot' => [96, 92, 95, 89, 94],
-                'radar_human' => [12, 18, 24, 15, 28],
+                'radar_bot' => $bCount > 0 ? [96, 92, 95, 89, 94] : [0, 0, 0, 0, 0],
+                'radar_human' => $hCount > 0 ? [12, 18, 24, 15, 28] : [0, 0, 0, 0, 0],
                 'total_analyzed' => $posts->count(),
                 'human_count' => $hCount,
                 'bot_count' => $bCount,
@@ -672,39 +923,21 @@ class SospemController extends Controller
             'subtitle' => 'Pantauan Aktif',
             'rank' => $nextRank,
             'total_posts' => 0,
-            'human_pct' => 50.0,
-            'bot_pct' => 50.0,
-            'pos_pct' => 50.0,
-            'neg_pct' => 50.0,
+            'human_pct' => 0.0,
+            'bot_pct' => 0.0,
+            'pos_pct' => 0.0,
+            'neg_pct' => 0.0,
             'trend' => $validated['trend'],
             'keywords' => $keywordsArray,
             'platforms' => [],
         ]);
 
-        // Buat sampel postingan awal (Orang & Bot) di ketiga platform dan hitung agregasi otomatis
-        foreach (['meta', 'x', 'tiktok'] as $platKey) {
-            $analyzer->ingestAndAnalyze($issue, [
-                'platform' => $platKey,
-                'author_name' => 'Rizal Fauzi',
-                'author_handle' => '@rizalfauzi_econ',
-                'force_bot' => false,
-                'content' => "Evaluasi publik terkait {$title}: perlu transparansi data dan pengawasan pelaksanaan di tingkat daerah agar tidak menimbulkan masalah baru.",
-            ]);
-
-            $analyzer->ingestAndAnalyze($issue, [
-                'platform' => $platKey,
-                'author_name' => 'Sahabat Kebijakan',
-                'author_handle' => '@sahabat_negeri77',
-                'force_bot' => true,
-                'content' => "Dukungan penuh masyarakat untuk {$title}! Solusi nyata demi kemajuan bangsa dan kesejahteraan bersama! #DukungKebijakan #IndonesiaMaju",
-            ]);
-        }
-
+        $analyzer->recalculateIssueStats($issue);
         $analyzer->rerankAllIssues();
 
         return redirect()
             ->route('issues.index')
-            ->with('status', "Isu \"{$issue->title}\" beserta postingan awalnya berhasil disimpan dan dihitung di PostgreSQL.");
+            ->with('status', "Isu \"{$issue->title}\" berhasil disimpan ke PostgreSQL.");
     }
 
     /**
@@ -768,5 +1001,399 @@ class SospemController extends Controller
         return redirect()
             ->route('issues.index')
             ->with('status', "Postingan berhasil dianalisis & disimpan ke PostgreSQL! Hasil Deteksi: {$kategori} · Sentimen: {$sentimenLabel}.");
+    }
+
+    /**
+     * Halaman Chatbot AI Analis yang terhubung ke Agent Lokal (Ollama / FastAPI JupyterHub)
+     * maupun langsung menganalisis data PostgreSQL SOSPEM (RAG).
+     */
+    public function chatbot(Request $request): View
+    {
+        $selectedSlug = (string) $request->query('issue', 'all');
+        $rag = $this->buildDatabaseRagContext($selectedSlug === 'all' ? null : $selectedSlug);
+
+        return view('chatbot', [
+            'kpi' => $rag['kpi'],
+            'issues' => $rag['issues'],
+            'accountsCount' => $rag['accounts_count'],
+            'institutionsCount' => count($rag['institutions']),
+            'selectedSlug' => $selectedSlug,
+            'defaultAgentUrl' => (string) env('LOCAL_AGENT_URL', 'http://127.0.0.1:11434/api/chat'),
+            'defaultAgentModel' => (string) env('LOCAL_AGENT_MODEL', 'qwen2.5:3b'),
+        ]);
+    }
+
+    /**
+     * Endpoint Konteks RAG Live dari PostgreSQL untuk dibaca Agent Lokal / JupyterHub.
+     */
+    public function chatbotContext(Request $request): JsonResponse
+    {
+        $issueSlug = $request->query('issue_slug');
+        $slug = (is_string($issueSlug) && $issueSlug !== '' && $issueSlug !== 'all') ? $issueSlug : null;
+        $rag = $this->buildDatabaseRagContext($slug);
+
+        return response()->json([
+            'status' => 'ok',
+            'kpi' => $rag['kpi'],
+            'issues' => $rag['issues'],
+            'institutions' => $rag['institutions'],
+            'top_bot_accounts' => $rag['top_bot_accounts'],
+            'recent_posts' => $rag['recent_posts'],
+            'context_text' => $rag['summary'],
+        ]);
+    }
+
+    /**
+     * Endpoint Utama Chatbot (POST /api/chatbot/ask):
+     * Meneruskan pertanyaan + konteks PostgreSQL ke Agent Lokal (Ollama / OpenAI-compatible / JupyterHub Webhook),
+     * dan otomatis fallback ke mesin analisis forensik PostgreSQL jika Agent Lokal offline atau mode database dipilih.
+     */
+    public function askChatbot(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:2000'],
+            'issue_slug' => ['nullable', 'string', 'max:120'],
+            'agent_url' => ['nullable', 'string', 'max:500'],
+            'agent_model' => ['nullable', 'string', 'max:120'],
+            'agent_mode' => ['nullable', 'in:auto,external,database'],
+            'history' => ['nullable', 'array'],
+        ]);
+
+        $message = trim($validated['message']);
+        $issueSlug = $validated['issue_slug'] ?? null;
+        $normalizedSlug = ($issueSlug !== null && $issueSlug !== '' && $issueSlug !== 'all') ? $issueSlug : null;
+        $agentMode = $validated['agent_mode'] ?? 'auto';
+        $agentUrl = trim((string) ($validated['agent_url'] ?? env('LOCAL_AGENT_URL', 'http://127.0.0.1:11434/api/chat')));
+        $agentModel = trim((string) ($validated['agent_model'] ?? env('LOCAL_AGENT_MODEL', 'qwen2.5:3b')));
+        if ($agentModel === '') {
+            $agentModel = 'qwen2.5:3b';
+        }
+
+        $rag = $this->buildDatabaseRagContext($normalizedSlug);
+        $systemPrompt = "Anda adalah Asisten Analis Forensik Opini Publik & Deteksi Bot SOSPEM. Jawablah dalam bahasa Indonesia yang ringkas, objektif, dan berbasis data berikut saja. Jangan mengarang angka di luar data.\n\n".$rag['summary'];
+
+        $historyMessages = [];
+        if (! empty($validated['history']) && is_array($validated['history'])) {
+            foreach (array_slice($validated['history'], -6) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $role = in_array(($item['role'] ?? ''), ['user', 'assistant'], true) ? $item['role'] : null;
+                $content = trim((string) ($item['content'] ?? ''));
+                if ($role !== null && $content !== '') {
+                    $historyMessages[] = ['role' => $role, 'content' => $content];
+                }
+            }
+        }
+
+        $messagesPayload = array_merge(
+            [['role' => 'system', 'content' => $systemPrompt]],
+            $historyMessages,
+            [['role' => 'user', 'content' => $message]]
+        );
+
+        $canCallExternal = $agentMode !== 'database'
+            && $agentUrl !== ''
+            && (str_starts_with($agentUrl, 'http://') || str_starts_with($agentUrl, 'https://'));
+
+        $agentError = null;
+        $startTime = microtime(true);
+
+        if ($canCallExternal) {
+            try {
+                $lowerUrl = strtolower($agentUrl);
+                if (str_contains($lowerUrl, '/api/generate')) {
+                    $body = [
+                        'model' => $agentModel,
+                        'system' => $systemPrompt,
+                        'prompt' => $message,
+                        'stream' => false,
+                    ];
+                } elseif (str_contains($lowerUrl, '/api/chat') || str_contains($lowerUrl, '/v1/chat/completions')) {
+                    $body = [
+                        'model' => $agentModel,
+                        'messages' => $messagesPayload,
+                        'stream' => false,
+                    ];
+                } else {
+                    $body = [
+                        'model' => $agentModel,
+                        'system_prompt' => $systemPrompt,
+                        'message' => $message,
+                        'prompt' => $message,
+                        'context' => $rag['summary'],
+                        'messages' => $messagesPayload,
+                        'stream' => false,
+                    ];
+                }
+
+                $response = Http::connectTimeout(4)
+                    ->timeout(45)
+                    ->acceptJson()
+                    ->post($agentUrl, $body);
+
+                if ($response->successful()) {
+                    $json = $response->json();
+                    $replyText = null;
+
+                    if (is_array($json)) {
+                        $replyText = $json['message']['content']
+                            ?? $json['choices'][0]['message']['content']
+                            ?? $json['response']
+                            ?? $json['reply']
+                            ?? $json['answer']
+                            ?? $json['output']
+                            ?? null;
+                    }
+
+                    if (is_string($replyText) && trim($replyText) !== '') {
+                        return response()->json([
+                            'status' => 'ok',
+                            'source' => 'local_agent',
+                            'agent_model' => $agentModel,
+                            'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                            'reply' => trim($replyText),
+                            'kpi' => $rag['kpi'],
+                        ]);
+                    }
+
+                    $agentError = 'Respons Agent Lokal berhasil (HTTP '.$response->status().') tetapi format JSON tidak berisi teks balasan.';
+                } else {
+                    $agentError = 'Agent Lokal mengembalikan HTTP '.$response->status().'.';
+                }
+            } catch (Throwable $e) {
+                $agentError = 'Tidak dapat terhubung ke Agent Lokal ('.$e->getMessage().').';
+            }
+
+            if ($agentMode === 'external' && $agentError !== null) {
+                return response()->json([
+                    'status' => 'error',
+                    'source' => 'local_agent_error',
+                    'error' => $agentError,
+                    'reply' => "Gagal terhubung ke Agent Lokal ({$agentUrl}): {$agentError}\n\nPastikan server Ollama atau FastAPI/Qwen Anda aktif, atau ubah mode ke Otomatis / Database PostgreSQL.",
+                    'kpi' => $rag['kpi'],
+                ]);
+            }
+        }
+
+        // Fallback otomatis atau mode analisis langsung database PostgreSQL
+        $fallbackReply = $this->generateDatabaseForensicReply($message, $rag, $agentError);
+
+        return response()->json([
+            'status' => 'ok',
+            'source' => 'database_rag_engine',
+            'agent_error' => $agentError,
+            'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+            'reply' => $fallbackReply,
+            'kpi' => $rag['kpi'],
+        ]);
+    }
+
+    /**
+     * Kumpulkan ringkasan konteks PostgreSQL (RAG) untuk dikirim ke Agent Lokal maupun fallback engine.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildDatabaseRagContext(?string $issueSlug): array
+    {
+        $kpi = $this->buildKpiStats();
+        $issues = $this->getIssuesFromDatabase();
+        $selectedIssue = $issueSlug !== null
+            ? Issue::where('slug', $issueSlug)->first()
+            : null;
+
+        $postsQuery = SocialPost::with('issue')->orderByDesc('posted_at')->orderByDesc('id');
+        if ($selectedIssue !== null) {
+            $postsQuery->where('issue_id', $selectedIssue->id);
+        }
+        $posts = $postsQuery->limit(60)->get();
+
+        $instStats = [];
+        foreach ($posts as $p) {
+            $meta = is_array($p->metadata) ? $p->metadata : [];
+            $instList = $meta['ai_institutions'] ?? [];
+            if (! is_array($instList)) {
+                continue;
+            }
+            foreach ($instList as $inst) {
+                $lembaga = trim((string) ($inst['lembaga'] ?? ''));
+                if ($lembaga === '') {
+                    continue;
+                }
+                if (! isset($instStats[$lembaga])) {
+                    $instStats[$lembaga] = [
+                        'lembaga' => $lembaga,
+                        'total' => 0,
+                        'pos' => 0,
+                        'neg' => 0,
+                        'netral' => 0,
+                    ];
+                }
+                $instStats[$lembaga]['total']++;
+                $sent = strtolower((string) ($inst['sentiment_key'] ?? $inst['sentimen'] ?? ''));
+                if (str_contains($sent, 'pos')) {
+                    $instStats[$lembaga]['pos']++;
+                } elseif (str_contains($sent, 'neg')) {
+                    $instStats[$lembaga]['neg']++;
+                } else {
+                    $instStats[$lembaga]['netral']++;
+                }
+            }
+        }
+        $institutions = collect($instStats)->sortByDesc('total')->values()->take(10)->all();
+
+        $topBotAccounts = MonitoredAccount::orderByDesc('bot_score')
+            ->limit(6)
+            ->get()
+            ->map(fn (MonitoredAccount $acc): array => [
+                'handle' => $acc->handle,
+                'name' => $acc->name,
+                'platform' => $acc->platform,
+                'is_bot' => (bool) $acc->is_bot,
+                'bot_score' => (float) $acc->bot_score,
+                'reasons' => $acc->reasons ?? [],
+            ])
+            ->all();
+
+        $recentPosts = $posts->take(8)->map(fn (SocialPost $p): array => [
+            'id' => $p->id,
+            'issue' => $p->issue ? $p->issue->title : '-',
+            'platform' => $p->platform,
+            'author_handle' => $p->author_handle,
+            'is_bot' => (bool) $p->is_bot,
+            'bot_score' => (float) $p->bot_score,
+            'sentiment' => $p->sentiment,
+            'content' => Str::limit($p->content, 160),
+            'ai_bot_reason' => $p->metadata['ai_bot_reason'] ?? null,
+        ])->all();
+
+        $lines = [];
+        $lines[] = 'RINGKASAN DATA POSTGRESQL SOSPEM (REAL-TIME):';
+        $lines[] = "- Total Sampel Postingan: {$kpi['total_posts']} (Warga Organik: {$kpi['human_posts']} / {$kpi['human_pct']}%, Jaringan Bot: {$kpi['bot_posts']} / {$kpi['bot_pct']}%)";
+        $lines[] = "- Isu Teratas (#1): {$kpi['top_issue_title']} ({$kpi['top_issue_posts']} post, {$kpi['top_issue_share']}%)";
+
+        if ($selectedIssue !== null) {
+            $lines[] = "- Filter Fokus Isu: {$selectedIssue->title} ({$selectedIssue->total_posts} post, Orang {$selectedIssue->human_pct}%, Bot {$selectedIssue->bot_pct}%, Positif {$selectedIssue->pos_pct}%, Negatif {$selectedIssue->neg_pct}%)";
+        }
+
+        if (! empty($issues)) {
+            $lines[] = "\nDAFTAR ISU TERPANTAU:";
+            foreach (array_slice($issues, 0, 8) as $iss) {
+                $lines[] = "  #{$iss['rank']} {$iss['title']}: {$iss['total_posts']} post (Orang {$iss['human_pct']}%, Bot {$iss['bot_pct']}%, Positif {$iss['pos_pct']}%, Negatif {$iss['neg_pct']}%, Tren: {$iss['trend']})";
+            }
+        }
+
+        if (! empty($institutions)) {
+            $lines[] = "\nSENTIMEN PER LEMBAGA (AI QWEN):";
+            foreach ($institutions as $inst) {
+                $lines[] = "  - {$inst['lembaga']}: {$inst['total']} sebutan (Positif: {$inst['pos']}, Negatif: {$inst['neg']}, Netral: {$inst['netral']})";
+            }
+        }
+
+        if (! empty($topBotAccounts)) {
+            $lines[] = "\nAKUN TERPANTAU TERTINGGI:";
+            foreach ($topBotAccounts as $acc) {
+                $jenis = $acc['is_bot'] ? 'Bot' : 'Orang';
+                $alasan = ! empty($acc['reasons']) ? $acc['reasons'][0] : '-';
+                $lines[] = "  - {$acc['handle']} [{$jenis}, Skor Bot {$acc['bot_score']}%]: {$alasan}";
+            }
+        }
+
+        if (! empty($recentPosts)) {
+            $lines[] = "\nSAMPEL POSTINGAN TERBARU:";
+            foreach ($recentPosts as $rp) {
+                $jenis = $rp['is_bot'] ? 'Bot' : 'Orang';
+                $lines[] = "  - [{$rp['platform']}] {$rp['author_handle']} ({$jenis} {$rp['bot_score']}%, {$rp['sentiment']}): \"{$rp['content']}\"";
+            }
+        }
+
+        return [
+            'kpi' => $kpi,
+            'issues' => $issues,
+            'selected_issue' => $selectedIssue ? $this->formatIssueForView($selectedIssue) : null,
+            'institutions' => $institutions,
+            'top_bot_accounts' => $topBotAccounts,
+            'recent_posts' => $recentPosts,
+            'accounts_count' => MonitoredAccount::count(),
+            'summary' => implode("\n", $lines),
+        ];
+    }
+
+    /**
+     * Mesin penjawab berbasis data PostgreSQL SOSPEM (digunakan saat mode database atau fallback agent lokal offline).
+     *
+     * @param  array<string, mixed>  $rag
+     */
+    private function generateDatabaseForensicReply(string $message, array $rag, ?string $agentError = null): string
+    {
+        $kpi = $rag['kpi'];
+        $q = strtolower($message);
+        $prefix = $agentError !== null
+            ? "[Mode Fallback Database PostgreSQL — Agent Lokal tidak terjangkau]\n\n"
+            : "[Analisis Langsung Database PostgreSQL SOSPEM]\n\n";
+
+        if ((int) $kpi['total_posts'] === 0) {
+            return $prefix
+                .'Saat ini database PostgreSQL `social_posts` masih kosong (0 postingan), dengan '
+                .count($rag['issues'])." kategori isu terdaftar.\n\n"
+                .'Silakan kirim data dari JupyterHub ke `POST /api/ingest` atau `POST /api/ingest-batch`, '
+                .'atau upload file `stream_analisis_sospem.json` di menu **Kelola Isu** (`/issues`) agar chatbot dapat merangkum data riil.';
+        }
+
+        if (str_contains($q, 'lembaga') || str_contains($q, 'kementerian') || str_contains($q, 'instansi') || str_contains($q, 'dpr') || str_contains($q, 'presiden')) {
+            if (empty($rag['institutions'])) {
+                return $prefix."Dari {$kpi['total_posts']} postingan terpantau, belum ditemukan metadata `ai_institutions` (rincian lembaga) dari AI Qwen.";
+            }
+            $rows = array_map(
+                fn (array $i): string => "- **{$i['lembaga']}**: {$i['total']} sebutan (+{$i['pos']} Positif, -{$i['neg']} Negatif, {$i['netral']} Netral)",
+                $rag['institutions']
+            );
+
+            return $prefix."**Rincian Sentimen per Lembaga Pemerintahan (Ekstraksi AI Qwen):**\n".implode("\n", $rows);
+        }
+
+        if (str_contains($q, 'akun') || str_contains($q, 'buzzer') || str_contains($q, 'forensik') || str_contains($q, 'handle')) {
+            if (empty($rag['top_bot_accounts'])) {
+                return $prefix.'Belum ada akun di tabel `monitored_accounts`.';
+            }
+            $rows = array_map(function (array $a): string {
+                $status = $a['is_bot'] ? 'Jaringan Bot' : 'Warga Organik';
+                $reason = ! empty($a['reasons']) ? $a['reasons'][0] : 'Tidak ada catatan khusus';
+
+                return "- **{$a['handle']}** ({$status} · Skor Bot {$a['bot_score']}%) — {$reason}";
+            }, $rag['top_bot_accounts']);
+
+            return $prefix."**Daftar Akun Terpantau & Catatan Forensik Terbaru:**\n".implode("\n", $rows);
+        }
+
+        if (str_contains($q, 'post') || str_contains($q, 'komentar') || str_contains($q, 'narasi') || str_contains($q, 'warga') || str_contains($q, 'perbandingan')) {
+            $target = $rag['selected_issue'] ?? ($rag['issues'][0] ?? null);
+            $issueInfo = $target
+                ? "Pada isu **{$target['title']}** ({$target['total_posts']} post): Warga Organik {$target['human_pct']}% vs Jaringan Bot {$target['bot_pct']}%, dengan sentimen Positif {$target['pos_pct']}% vs Negatif {$target['neg_pct']}%.\n\n"
+                : '';
+
+            $sampleLines = array_map(function (array $p): string {
+                $tag = $p['is_bot'] ? 'Bot' : 'Orang';
+
+                return "- [{$tag} · {$p['sentiment']}] **{$p['author_handle']}**: \"{$p['content']}\"";
+            }, array_slice($rag['recent_posts'], 0, 5));
+
+            return $prefix.$issueInfo."**Sampel Postingan Terbaru:**\n".implode("\n", $sampleLines);
+        }
+
+        // Ringkasan Eksekutif Default
+        $topIssues = array_slice($rag['issues'], 0, 5);
+        $issueLines = array_map(
+            fn (array $iss): string => "- **#{$iss['rank']} {$iss['title']}**: {$iss['total_posts']} post (Orang {$iss['human_pct']}% · Bot {$iss['bot_pct']}% · Positif {$iss['pos_pct']}%)",
+            $topIssues
+        );
+
+        return $prefix
+            ."**Ringkasan Eksekutif Opini Publik SOSPEM:**\n"
+            ."- Total Sampel Dianalisis: **{$kpi['total_posts']} postingan**\n"
+            ."- Warga Organik: **{$kpi['human_posts']} post ({$kpi['human_pct']}%)**\n"
+            ."- Jaringan Bot: **{$kpi['bot_posts']} post ({$kpi['bot_pct']}%)**\n"
+            ."- Isu Teratas (#1): **{$kpi['top_issue_title']}** ({$kpi['top_issue_posts']} post / {$kpi['top_issue_share']}%)\n\n"
+            ."**Peringkat Isu Teratas:**\n".implode("\n", $issueLines);
     }
 }

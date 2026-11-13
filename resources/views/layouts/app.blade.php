@@ -531,6 +531,13 @@
                     <span class="side-nav-label">Grafik Analitik</span>
                 </a>
 
+                <a href="{{ route('chatbot') }}" class="side-nav-link {{ request()->routeIs('chatbot') ? 'is-active' : '' }}" title="Chatbot">
+                    <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span class="side-nav-label">Chatbot</span>
+                </a>
+
                 <a href="{{ route('methodology') }}" class="side-nav-link {{ request()->routeIs('methodology') ? 'is-active' : '' }}" title="Metodologi & Kepatuhan UU PDP">
                     <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"></circle>
