@@ -568,10 +568,10 @@
     const chartPlatform = new Chart(document.getElementById('chartPlatformShare'), {
         type: 'doughnut',
         data: {
-            labels: ['Meta (IG & FB)', 'X & Threads', 'TikTok & YouTube'],
+            labels: ['X & Threads', 'Meta (IG & FB)', 'Berita & Media', 'TikTok & YouTube'],
             datasets: [{
                 data: platformCounts,
-                backgroundColor: ['#18b26f', '#3b82f6', '#737373'],
+                backgroundColor: ['#18b26f', '#3b82f6', '#f59e0b', '#737373'],
                 borderColor: isLight() ? '#ffffff' : '#181818',
                 borderWidth: 2
             }]

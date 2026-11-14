@@ -18,6 +18,11 @@ Route::get('/api/live-stats', [SospemController::class, 'liveStats'])->name('api
 Route::get('/api/issues', fn () => response()->json(Issue::orderBy('rank')->get(['id', 'rank', 'title', 'slug', 'keywords', 'trend', 'total_posts'])))->name('api.issues');
 Route::post('/api/chatbot/ask', [SospemController::class, 'askChatbot'])->name('api.chatbot.ask');
 Route::get('/api/chatbot/context', [SospemController::class, 'chatbotContext'])->name('api.chatbot.context');
+Route::post('/api/scrape-jobs', [SospemController::class, 'createScrapeJob'])->name('api.scrape-jobs.create');
+Route::get('/api/scrape-jobs/pending', [SospemController::class, 'getPendingJob'])->name('api.scrape-jobs.pending');
+Route::get('/api/scrape-jobs/{id}', [SospemController::class, 'getJobStatus'])->name('api.scrape-jobs.show');
+Route::get('/api/scrape-jobs/{id}/status', [SospemController::class, 'getJobStatus'])->name('api.scrape-jobs.status');
+Route::post('/api/scrape-jobs/{id}/done', [SospemController::class, 'completeJob'])->name('api.scrape-jobs.done');
 
 // Halaman Web Utama (Wajib Login)
 Route::middleware('auth')->group(function (): void {

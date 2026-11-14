@@ -10,6 +10,7 @@ use App\Services\PostAnalyzerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -71,6 +72,33 @@ class SospemController extends Controller
      */
     private function formatIssueForView(Issue $issue): array
     {
+        $rawPlatforms = is_array($issue->platforms) ? $issue->platforms : [];
+        $platformOrder = [
+            'x' => 'X & Threads',
+            'meta' => 'Meta (IG & FB)',
+            'news' => 'Berita & Media',
+            'tiktok' => 'TikTok & YouTube',
+        ];
+
+        $orderedPlatforms = [];
+        foreach ($platformOrder as $key => $name) {
+            if (isset($rawPlatforms[$key])) {
+                $orderedPlatforms[$key] = $rawPlatforms[$key];
+                $orderedPlatforms[$key]['name'] = $name;
+            } else {
+                $orderedPlatforms[$key] = [
+                    'name' => $name,
+                    'volume' => '0 post',
+                    'count' => 0,
+                    'human_pos' => 50.0,
+                    'human_neg' => 50.0,
+                    'bot_pos' => 50.0,
+                    'bot_neg' => 50.0,
+                    'sufficient' => true,
+                ];
+            }
+        }
+
         return [
             'id' => $issue->id,
             'rank' => str_pad((string) $issue->rank, 2, '0', STR_PAD_LEFT),
@@ -83,7 +111,7 @@ class SospemController extends Controller
             'pos_pct' => (float) $issue->pos_pct,
             'neg_pct' => (float) $issue->neg_pct,
             'trend' => $issue->trend,
-            'platforms' => $issue->platforms ?? [],
+            'platforms' => $orderedPlatforms,
         ];
     }
 
@@ -236,7 +264,22 @@ class SospemController extends Controller
         $sentimentFilter = (string) $request->query('sentiment', 'all');
 
         $baseQuery = SocialPost::where('issue_id', $issueModel->id)
-            ->where('platform', $platformKey)
+            ->where(function ($q) use ($platformKey) {
+                if ($platformKey === 'news') {
+                    $q->where('platform', 'news')
+                        ->orWhere('metadata->platform_origin', 'news')
+                        ->orWhere('post_url', 'like', '%news.google.com%');
+                } elseif ($platformKey === 'meta') {
+                    $q->where('platform', 'meta')
+                        ->where('post_url', 'not like', '%news.google.com%')
+                        ->where(function ($sub) {
+                            $sub->whereNull('metadata->platform_origin')
+                                ->orWhere('metadata->platform_origin', '!=', 'news');
+                        });
+                } else {
+                    $q->where('platform', $platformKey);
+                }
+            })
             ->orderByDesc('posted_at')
             ->orderByDesc('id');
 
@@ -312,8 +355,9 @@ class SospemController extends Controller
         $analyzer->rerankAllIssues();
 
         $platformNames = [
-            'meta' => 'Meta (FB & IG)',
             'x' => 'X & Threads',
+            'meta' => 'Meta (FB & IG)',
+            'news' => 'Berita & Media',
             'tiktok' => 'TikTok & Shorts',
         ];
         $platformLabel = $platformNames[$post->platform] ?? 'X & Threads';
@@ -440,10 +484,20 @@ class SospemController extends Controller
                 continue;
             }
 
+            $rawPlat = (string) ($item['platform'] ?? '');
+            $rawOrigin = (string) ($item['platform_origin'] ?? $item['Platform SOSPEM'] ?? '');
+            if (strtolower(trim($rawPlat)) === 'news' || strtolower(trim($rawOrigin)) === 'news' || in_array(strtolower(trim($rawOrigin)), ['news', 'berita', 'google news', 'google_news', 'rss', 'media'], true)) {
+                $platResolved = 'news';
+            } else {
+                $platResolved = $item['platform'] ?? 'tiktok';
+            }
+
             $aiBlock = isset($item['analisis_ai']) && is_array($item['analisis_ai']) ? $item['analisis_ai'] : [];
             $normalizedPayload = [
                 'issue_slug' => $item['issue_slug'] ?? 'auto',
-                'platform' => $item['platform'] ?? 'tiktok',
+                'issue_title' => $item['issue_title'] ?? $item['tema'] ?? null,
+                'platform' => $platResolved,
+                'platform_origin' => $item['platform_origin'] ?? $item['Platform SOSPEM'] ?? null,
                 'author_name' => $authorName,
                 'author_handle' => $handle,
                 'content' => $content,
@@ -720,8 +774,9 @@ class SospemController extends Controller
         $botNegPct = $bCount > 0 ? round(100 - $botPosPct, 1) : 0.0;
 
         // 3. Agregasi Proporsi Distribusi Platform dari PostgreSQL
-        $metaCount = $posts->where('platform', 'meta')->count();
         $xCount = $posts->where('platform', 'x')->count();
+        $metaCount = $posts->where('platform', 'meta')->count();
+        $newsCount = $posts->where('platform', 'news')->count();
         $tiktokCount = $posts->where('platform', 'tiktok')->count();
 
         // 4. Matriks Volume per Isu: Warga Organik vs Jaringan Bot
@@ -852,7 +907,7 @@ class SospemController extends Controller
                 'hourly_bot' => $hourlyBot,
                 'sentiment_pos' => [$humanPosPct, $botPosPct],
                 'sentiment_neg' => [$humanNegPct, $botNegPct],
-                'platform_counts' => [$metaCount, $xCount, $tiktokCount],
+                'platform_counts' => [$xCount, $metaCount, $newsCount, $tiktokCount],
                 'issue_labels' => $issueLabels,
                 'issue_human_counts' => $issueHumanCounts,
                 'issue_bot_counts' => $issueBotCounts,
@@ -982,7 +1037,7 @@ class SospemController extends Controller
     {
         $validated = $request->validate([
             'issue_id' => ['required', 'exists:issues,id'],
-            'platform' => ['required', 'in:meta,x,tiktok'],
+            'platform' => ['required', 'in:meta,x,tiktok,news'],
             'author_name' => ['required', 'string', 'max:100'],
             'author_handle' => ['required', 'string', 'max:80'],
             'content' => ['required', 'string', 'max:1000'],
@@ -1459,5 +1514,115 @@ class SospemController extends Controller
             ."- Jaringan Bot: **{$kpi['bot_posts']} post ({$kpi['bot_pct']}%)**\n"
             ."- Isu Teratas (#1): **{$kpi['top_issue_title']}** ({$kpi['top_issue_posts']} post / {$kpi['top_issue_share']}%)\n\n"
             ."**Peringkat Isu Teratas:**\n".implode("\n", $issueLines);
+    }
+
+    /**
+     * Buat antrean tugas scraping baru dari form website.
+     */
+    public function createScrapeJob(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'topic' => 'required|string|max:150',
+            'limit' => 'nullable|integer|min:1|max:50',
+        ]);
+
+        $topic = trim($validated['topic']);
+        $slug = Str::slug($topic);
+
+        // Buat isu baru di database jika belum ada, agar langsung muncul dan siap menampung post
+        if ($slug !== '') {
+            Issue::firstOrCreate(
+                ['slug' => $slug],
+                [
+                    'title' => $topic,
+                    'subtitle' => 'Pantauan Live Scraper & Opini Publik',
+                    'rank' => Issue::count() + 1,
+                    'trend' => 'stable',
+                    'keywords' => [$topic, str_replace('-', ' ', $slug)],
+                    'human_pct' => 50.00,
+                    'bot_pct' => 50.00,
+                    'pos_pct' => 50.00,
+                    'neg_pct' => 50.00,
+                    'total_posts' => 0,
+                ]
+            );
+        }
+
+        $jobId = DB::table('scrape_jobs')->insertGetId([
+            'topic' => $topic,
+            'limit' => $validated['limit'] ?? 10,
+            'status' => 'pending',
+            'scraped_count' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'status' => 'ok',
+            'job_id' => $jobId,
+            'issue_slug' => $slug,
+        ]);
+    }
+
+    /**
+     * Diambil oleh loop polling JupyterHub setiap beberapa detik.
+     */
+    public function getPendingJob(): JsonResponse
+    {
+        $job = DB::table('scrape_jobs')
+            ->where('status', 'pending')
+            ->orderBy('id')
+            ->first();
+
+        if (! $job) {
+            return response()->json(['job' => null]);
+        }
+
+        DB::table('scrape_jobs')
+            ->where('id', $job->id)
+            ->update([
+                'status' => 'running',
+                'updated_at' => now(),
+            ]);
+
+        $job->issue_slug = Str::slug($job->topic);
+
+        return response()->json(['job' => $job]);
+    }
+
+    /**
+     * Dilaporkan oleh JupyterHub saat proses scraping & analisis selesai.
+     */
+    public function completeJob(Request $request, int|string $id): JsonResponse
+    {
+        DB::table('scrape_jobs')
+            ->where('id', $id)
+            ->update([
+                'status' => $request->input('status', 'completed'),
+                'scraped_count' => (int) $request->input('scraped_count', 0),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Cek status antrean scrape job untuk update status real-time di UI (GET /api/scrape-jobs/{id}).
+     */
+    public function getJobStatus(int|string $id): JsonResponse
+    {
+        $job = DB::table('scrape_jobs')->where('id', $id)->first();
+
+        if (! $job) {
+            return response()->json(['status' => 'not_found', 'message' => 'Job tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'job' => $job,
+            'job_id' => $job->id,
+            'job_status' => $job->status,
+            'scraped_count' => (int) $job->scraped_count,
+        ]);
     }
 }

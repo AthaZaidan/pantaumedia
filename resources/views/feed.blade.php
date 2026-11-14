@@ -298,6 +298,12 @@
                             </div>
                         </div>
 
+                        @if(!empty($post['source_news']) && $post['source_news'] !== $post['text'])
+                            <div style="font-size: 11.5px; color: var(--color-teal-dark); font-weight: 500; margin-bottom: 5px;">
+                                📰 {{ $post['source_news'] }}
+                            </div>
+                        @endif
+
                         <p class="post-body-text">{{ $post['text'] }}</p>
 
                         @if(!empty($post['ai_institutions']) || !empty($post['ai_bot_reason']))
@@ -328,7 +334,7 @@
 
                         <div class="post-item-footer tabular">
                             <span>{{ number_format($post['likes'], 0, ',', '.') }} suka &middot; {{ number_format($post['reposts'], 0, ',', '.') }} repost</span>
-                            <a href="{{ $post['url'] }}" target="_blank" rel="noopener" class="post-ext-link">Buka postingan asli ↗</a>
+                            <a href="{{ $post['url'] }}" target="_blank" rel="noopener" class="post-ext-link">{{ $platformKey === 'news' ? 'Buka tautan berita ↗' : 'Buka postingan asli ↗' }}</a>
                         </div>
                     </article>
                 @empty
@@ -372,6 +378,12 @@
                             </div>
                         </div>
 
+                        @if(!empty($post['source_news']) && $post['source_news'] !== $post['text'])
+                            <div style="font-size: 11.5px; color: var(--color-teal-dark); font-weight: 500; margin-bottom: 5px;">
+                                📰 {{ $post['source_news'] }}
+                            </div>
+                        @endif
+
                         <p class="post-body-text">{{ $post['text'] }}</p>
 
                         @if(!empty($post['ai_institutions']) || !empty($post['ai_bot_reason']))
@@ -402,7 +414,7 @@
 
                         <div class="post-item-footer tabular">
                             <span>{{ number_format($post['likes'], 0, ',', '.') }} suka &middot; {{ number_format($post['reposts'], 0, ',', '.') }} repost</span>
-                            <a href="{{ $post['url'] }}" target="_blank" rel="noopener" class="post-ext-link">Buka postingan asli ↗</a>
+                            <a href="{{ $post['url'] }}" target="_blank" rel="noopener" class="post-ext-link">{{ $platformKey === 'news' ? 'Buka tautan berita ↗' : 'Buka postingan asli ↗' }}</a>
                         </div>
                     </article>
                 @empty

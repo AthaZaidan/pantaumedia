@@ -366,10 +366,13 @@
 
     .platform-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
         gap: 12px;
     }
-    @media (max-width: 860px) {
+    @media (max-width: 1200px) {
+        .platform-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
         .platform-grid { grid-template-columns: 1fr; }
     }
 
@@ -439,6 +442,41 @@
         padding-top: 6px;
         border-top: 1px dashed var(--color-border);
     }
+
+    /* Modal Dialog Scrape Live */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(2px);
+        z-index: 1200;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    }
+    .modal-overlay.is-active {
+        display: flex;
+    }
+    .modal-box {
+        background: var(--color-surface);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--color-border);
+        width: 100%;
+        max-width: 520px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .modal-header {
+        padding: 16px 20px;
+        background: var(--color-surface);
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
 </style>
 @endsection
 
@@ -454,7 +492,8 @@
             <a href="{{ route('issues.index') }}" class="btn-clean">+ Kelola Isu</a>
             <a href="{{ route('analytics') }}" class="btn-clean">Grafik Detail</a>
             <a href="{{ route('methodology') }}" class="btn-clean">UU PDP</a>
-            <button type="button" class="btn-clean btn-primary" onclick="simulateIngest()">+ Simulasi Stream</button>
+            <button type="button" class="btn-clean" onclick="openScrapeModal()" style="background: #2563eb; border-color: #2563eb; color: #ffffff; font-weight: 600;">⚡ + Scrape Live</button>
+            <button type="button" class="btn-clean btn-primary" onclick="simulateIngest()" title="Hanya simulasi dummy stream di browser">+ Simulasi Stream</button>
         </div>
     </header>
 
@@ -680,6 +719,56 @@
             </article>
         @endforeach
     </main>
+
+    <!-- MODAL SCRAPE LIVE JUPYTERHUB -->
+    <div class="modal-overlay" id="modalScrapeLive" onclick="handleScrapeBackdrop(event)">
+        <div class="modal-box">
+            <div class="modal-header">
+                <div>
+                    <h3 style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #2563eb;">⚡</span> Perintahkan Scraping Live
+                    </h3>
+                    <p style="font-size: 11.5px; color: var(--color-text-secondary); margin: 3px 0 0;">
+                        Memerintahkan AI Agent & Scraper di JupyterHub menarik data asli YouTube/RSS.
+                    </p>
+                </div>
+                <button type="button" class="btn-clean" onclick="closeScrapeModal()" style="padding: 4px 8px; font-size: 13px;">✕</button>
+            </div>
+            <div class="modal-body" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label for="scrapeTopic" style="font-size: 12.5px; font-weight: 600; color: var(--color-text-primary);">
+                        Tema / Kata Kunci Isu
+                    </label>
+                    <input type="text" id="scrapeTopic" placeholder="Contoh: Makan Bergizi Gratis, IKN, Kenaikan PPN" 
+                        style="width: 100%; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; background: var(--color-surface); color: var(--color-text-primary); box-sizing: border-box;" />
+                    <div style="font-size: 11px; color: var(--color-text-secondary);">
+                        Kata kunci ini akan langsung diteruskan ke scraper YouTube & RSS di JupyterHub.
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label for="scrapeLimit" style="font-size: 12.5px; font-weight: 600; color: var(--color-text-primary);">
+                        Jumlah Maksimal Postingan (1 - 50)
+                    </label>
+                    <input type="number" id="scrapeLimit" value="10" min="1" max="50" 
+                        style="width: 120px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px; background: var(--color-surface); color: var(--color-text-primary); box-sizing: border-box;" />
+                </div>
+
+                <!-- Status Polling Box -->
+                <div id="scrapeStatusBox" style="display: none; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--color-surface-hover); border: 1px solid var(--color-border); font-size: 12px;">
+                    <div id="scrapeStatusText" style="font-weight: 600; color: var(--color-text-primary);"></div>
+                    <div id="scrapeStatusDetail" style="font-size: 11.5px; color: var(--color-text-secondary); margin-top: 4px; line-height: 1.4;"></div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--color-border);">
+                    <button type="button" class="btn-clean" onclick="closeScrapeModal()">Tutup</button>
+                    <button type="button" id="btnSubmitScrape" class="btn-clean" onclick="submitScrapeJob()" style="background: #2563eb; border-color: #2563eb; color: #ffffff; font-weight: 600;">
+                        🚀 Mulai Scraping Live
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @section('scripts')
@@ -805,6 +894,170 @@
             const title = item.getAttribute('data-title') || '';
             item.style.display = title.includes(q) ? '' : 'none';
         });
+    }
+
+    // ==========================================
+    // SCRAPE LIVE (REVERSE POLLING DENGAN JUPYTERHUB)
+    // ==========================================
+    let currentScrapeJobId = null;
+    let scrapePollInterval = null;
+
+    function openScrapeModal() {
+        document.getElementById('modalScrapeLive').classList.add('is-active');
+        const input = document.getElementById('scrapeTopic');
+        if (input) {
+            setTimeout(() => input.focus(), 100);
+        }
+    }
+
+    function closeScrapeModal() {
+        if (scrapePollInterval) {
+            clearInterval(scrapePollInterval);
+            scrapePollInterval = null;
+        }
+        document.getElementById('modalScrapeLive').classList.remove('is-active');
+    }
+
+    function handleScrapeBackdrop(e) {
+        if (e.target.id === 'modalScrapeLive') {
+            closeScrapeModal();
+        }
+    }
+
+    async function submitScrapeJob() {
+        const topic = document.getElementById('scrapeTopic').value.trim();
+        const limit = parseInt(document.getElementById('scrapeLimit').value, 10) || 10;
+        const btn = document.getElementById('btnSubmitScrape');
+        const statusBox = document.getElementById('scrapeStatusBox');
+        const statusText = document.getElementById('scrapeStatusText');
+        const statusDetail = document.getElementById('scrapeStatusDetail');
+
+        if (!topic) {
+            alert('Silakan masukkan tema atau kata kunci isu terlebih dahulu.');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'Menunggu JupyterHub...';
+        statusBox.style.display = 'block';
+        statusBox.style.borderColor = 'var(--color-border)';
+        statusText.innerHTML = '📡 <strong>Menunggu JupyterHub...</strong>';
+        statusDetail.innerText = 'Tugas scraping dibuat di database, menunggu listener JupyterHub mengambil tugas.';
+
+        try {
+            const res = await fetch("{{ route('api.scrape-jobs.create') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({ topic, limit })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.status === 'ok') {
+                currentScrapeJobId = data.job_id;
+                btn.innerText = 'Menunggu JupyterHub...';
+                statusText.innerHTML = `📡 <strong>Menunggu JupyterHub...</strong>`;
+                statusDetail.innerText = `Antrean #${data.job_id} aktif. JupyterHub akan mengecek antrean setiap beberapa detik.`;
+                if (typeof showToast === 'function') {
+                    showToast(`Tugas Scrape #${data.job_id} (${topic}) berhasil dibuat.`);
+                }
+
+                // Polling status tugas ke GET /api/scrape-jobs/{id} setiap 3 detik
+                startPollingJobStatus(currentScrapeJobId);
+            } else {
+                throw new Error(data.message || 'Gagal membuat tugas scraping');
+            }
+        } catch (err) {
+            btn.disabled = false;
+            btn.innerText = '🚀 Mulai Scraping Live';
+            statusText.innerHTML = '❌ <strong>Gagal membuat tugas:</strong> ' + err.message;
+            statusDetail.innerText = 'Pastikan server web Laravel aktif.';
+        }
+    }
+
+    function startPollingJobStatus(jobId) {
+        if (scrapePollInterval) {
+            clearInterval(scrapePollInterval);
+        }
+
+        let attempts = 0;
+        const maxAttempts = 100; // 100 * 3s = 300 detik (5 menit)
+        const btn = document.getElementById('btnSubmitScrape');
+        const statusBox = document.getElementById('scrapeStatusBox');
+        const statusText = document.getElementById('scrapeStatusText');
+        const statusDetail = document.getElementById('scrapeStatusDetail');
+
+        scrapePollInterval = setInterval(async () => {
+            attempts++;
+            try {
+                // Endpoint GET /api/scrape-jobs/{id}
+                const res = await fetch(`/api/scrape-jobs/${jobId}`, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                if (!res.ok) return;
+
+                const resData = await res.json();
+                const job = resData.job || resData;
+                const status = job.status || resData.job_status;
+                const count = (typeof job.scraped_count !== 'undefined') ? job.scraped_count : (resData.scraped_count || 0);
+
+                if (!status) return;
+
+                if (status === 'pending') {
+                    btn.disabled = true;
+                    btn.innerText = 'Menunggu JupyterHub...';
+                    statusBox.style.borderColor = 'var(--color-border)';
+                    statusText.innerHTML = '📡 <strong>Menunggu JupyterHub...</strong>';
+                    statusDetail.innerText = 'JupyterHub sedang memeriksa antrean, scraping akan segera dimulai...';
+                } else if (status === 'running') {
+                    btn.disabled = true;
+                    btn.innerText = 'JupyterHub sedang menarik & menganalisis data...';
+                    statusBox.style.borderColor = '#2563eb';
+                    statusText.innerHTML = '⚙️ <strong>JupyterHub sedang menarik & menganalisis data...</strong>';
+                    statusDetail.innerText = `Menarik hingga ${job.limit || 10} postingan YouTube/RSS dan menjalankan analisis sentimen & bot AI Qwen.`;
+                } else if (status === 'completed') {
+                    clearInterval(scrapePollInterval);
+                    scrapePollInterval = null;
+                    btn.disabled = false;
+                    btn.innerText = `Selesai! ${count} data masuk`;
+                    statusBox.style.borderColor = 'var(--color-teal)';
+                    statusText.innerHTML = `🎉 <strong>Selesai! ${count} data masuk</strong>`;
+                    statusDetail.innerText = 'Data berhasil disimpan ke database. Menutup modal & memperbarui dashboard...';
+                    if (typeof showToast === 'function') {
+                        showToast(`Selesai! ${count} data berhasil masuk.`);
+                    }
+
+                    // Otomatis tutup modal dan refresh halaman dashboard
+                    setTimeout(() => {
+                        closeScrapeModal();
+                        location.reload();
+                    }, 1500);
+                } else if (status === 'failed') {
+                    clearInterval(scrapePollInterval);
+                    scrapePollInterval = null;
+                    btn.disabled = false;
+                    btn.innerText = 'Ulangi Scrape';
+                    statusBox.style.borderColor = '#dc2626';
+                    statusText.innerHTML = '❌ <strong>Proses di JupyterHub Gagal</strong>';
+                    statusDetail.innerText = 'Periksa log JupyterHub untuk melihat kendala jaringan atau batas kuota.';
+                }
+
+                if (attempts >= maxAttempts) {
+                    clearInterval(scrapePollInterval);
+                    scrapePollInterval = null;
+                    btn.disabled = false;
+                    btn.innerText = 'Muat Ulang Halaman';
+                    statusText.innerHTML = '⏱️ <strong>Batas waktu pemantauan tercapai</strong>';
+                    statusDetail.innerText = 'Proses mungkin masih berlangsung di background JupyterHub. Silakan klik muat ulang setelah beberapa saat.';
+                    btn.onclick = () => location.reload();
+                }
+            } catch (e) {
+                // Abaikan gangguan jaringan sementara
+            }
+        }, 3000); // Polling setiap 3 detik
     }
 </script>
 @endsection

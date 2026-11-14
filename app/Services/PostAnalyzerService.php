@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Issue;
 use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class PostAnalyzerService
 {
@@ -31,23 +33,92 @@ class PostAnalyzerService
     ];
 
     /**
-     * Cocokkan teks postingan atau judul berita (source_news) dengan daftar Issue di PostgreSQL.
-     * Jika issue_slug tidak dikirim atau bernilai "auto", cari berdasarkan keywords/title,
-     * dan jika tidak ada yang cocok, fallback ke isu dengan rank = 1 agar tidak ada data yang gagal masuk.
+     * Cocokkan teks postingan atau parameter request dengan daftar Issue di PostgreSQL.
+     * Menggunakan pencocokan cerdas anti-fallback salah kamar:
+     * 1. Jika issue_slug spesifik (bukan 'auto'): cari berdasarkan slug atau LOWER(title),
+     *    buat baru otomatis via firstOrCreate jika belum ada.
+     * 2. Jika issue_title spesifik: cari berdasarkan LOWER(title) atau slug turunan, buat baru jika belum ada.
+     * 3. Jika issue_slug 'auto': lakukan pencocokan kata kunci mendalam (content & source_news)
+     *    terhadap seluruh isu di database (beserta sinonim kontekstual).
+     * 4. Jika 'auto' dan tidak cocok dengan isu manapun: cek ScrapeJob aktif atau arahkan ke 'Isu Terkini & Opini Publik',
+     *    BUKAN memaksakan masuk ke MBG (Makan Bergizi Gratis).
      *
      * @param  array<string, mixed>  $payload
      */
     public function resolveIssue(array $payload): Issue
     {
         $slug = trim((string) ($payload['issue_slug'] ?? ''));
+        $title = trim((string) ($payload['issue_title'] ?? ''));
 
+        // 1. Jika slug eksplisit diberikan dan bukan 'auto'
         if ($slug !== '' && strtolower($slug) !== 'auto') {
-            $found = Issue::where('slug', $slug)->first();
-            if ($found !== null) {
-                return $found;
+            $slugClean = strtolower($slug);
+            $slugAsTitle = strtolower(str_replace(['-', '_'], ' ', $slugClean));
+
+            $existing = Issue::where('slug', $slugClean)
+                ->orWhereRaw('LOWER(title) = ?', [$slugAsTitle])
+                ->first();
+
+            if (! $existing && $title !== '') {
+                $existing = Issue::whereRaw('LOWER(title) = ?', [strtolower($title)])->first();
+            }
+
+            if ($existing) {
+                return $existing;
+            }
+
+            $issueTitle = $title !== '' ? $title : Str::title(str_replace(['-', '_'], ' ', $slugClean));
+
+            return Issue::firstOrCreate(
+                ['slug' => $slugClean],
+                [
+                    'title' => $issueTitle,
+                    'subtitle' => 'Pantauan Live Scraper & Opini Publik',
+                    'rank' => Issue::count() + 1,
+                    'trend' => 'stable',
+                    'keywords' => [$issueTitle, str_replace(['-', '_'], ' ', $slugClean)],
+                    'human_pct' => 50.00,
+                    'bot_pct' => 50.00,
+                    'pos_pct' => 50.00,
+                    'neg_pct' => 50.00,
+                    'total_posts' => 0,
+                ]
+            );
+        }
+
+        // 2. Jika title eksplisit diberikan dan bukan 'auto'
+        if ($title !== '' && strtolower($title) !== 'auto') {
+            $titleLower = strtolower($title);
+            $derivedSlug = Str::slug($title);
+
+            $existing = Issue::whereRaw('LOWER(title) = ?', [$titleLower])
+                ->orWhere('slug', $derivedSlug)
+                ->first();
+
+            if ($existing) {
+                return $existing;
+            }
+
+            if ($derivedSlug !== '') {
+                return Issue::firstOrCreate(
+                    ['slug' => $derivedSlug],
+                    [
+                        'title' => $title,
+                        'subtitle' => 'Pantauan Live Scraper & Opini Publik',
+                        'rank' => Issue::count() + 1,
+                        'trend' => 'stable',
+                        'keywords' => [$title, str_replace('-', ' ', $derivedSlug)],
+                        'human_pct' => 50.00,
+                        'bot_pct' => 50.00,
+                        'pos_pct' => 50.00,
+                        'neg_pct' => 50.00,
+                        'total_posts' => 0,
+                    ]
+                );
             }
         }
 
+        // 3. Jika ada issue_id eksplisit
         if (! empty($payload['issue_id'])) {
             $foundById = Issue::find($payload['issue_id']);
             if ($foundById !== null) {
@@ -55,35 +126,132 @@ class PostAnalyzerService
             }
         }
 
+        // 4. Pencocokan kata kunci konten dan judul berita terhadap seluruh isu yang ada di database
         $searchCorpus = strtolower(trim(
             ((string) ($payload['content'] ?? $payload['komentar'] ?? $payload['text'] ?? '')).' '.
             ((string) ($payload['source_news'] ?? $payload['judul_berita'] ?? ''))
         ));
 
-        if ($searchCorpus !== '') {
-            $allIssues = Issue::orderBy('rank')->get();
-            foreach ($allIssues as $issue) {
-                $keywords = $issue->keywords ?? [];
-                $keywords[] = $issue->title;
+        // Kamus sinonim kontekstual isu-isu kebijakan publik
+        $contextualSynonyms = [
+            'karhutla' => ['karhutla', 'kebakaran hutan', 'hutan terbakar', 'kabut asap', 'titik api', 'lahan gambut', 'kebakaran lahan', 'manggala agni', 'asap pekat'],
+            'gas-alam' => ['gas alam', 'elpiji', 'lpg', 'gas melon', 'tabung gas', 'pangkalan gas', 'distribusi gas', 'langka gas', 'antre gas'],
+            'polusi-udara-jkt' => ['polusi udara', 'ispu', 'kualitas udara', 'debu', 'emisi', 'pltu', 'polusi jakarta', 'asap kendaraan', 'udara jkt'],
+            'makan-bergizi-gratis' => ['makan bergizi gratis', 'mbg', 'menu mbg', 'gizi gratis', 'makan siang gratis', 'dapur mbg', 'sarapan bergizi'],
+            'kabur-aja-dulu' => ['kabur aja dulu', 'kerja luar negeri', 'pajak kelas menengah', 'living abroad', 'whv', 'migrasi'],
+            'kopdes' => ['kopdes', 'koperasi desa', 'pangan desa', 'lumbung desa', 'koperasi merah putih'],
+            'subsidi-pupuk' => ['subsidi pupuk', 'pupuk urea', 'kartu tani', 'pupuk subsidi', 'pupuk langka', 'distribusi pupuk'],
+            'kenaikan-pbb' => ['kenaikan pbb', 'njop naik', 'pajak bumi bangunan', 'pbb p2', 'sppt pbb', 'pajak tanah'],
+            'jalan-rusak-lpg' => ['jalan rusak', 'infrastruktur daerah', 'perbaikan jalan', 'jalan berlubang', 'jalan berdebu', 'aspal rusak'],
+            'iuran-tapera' => ['iuran tapera', 'potongan tapera', 'tabungan perumahan', 'gaji dipotong tapera', 'bp tapera'],
+        ];
 
-                foreach ($keywords as $kw) {
-                    $kwClean = strtolower(trim((string) $kw));
-                    if ($kwClean !== '' && str_contains($searchCorpus, $kwClean)) {
-                        return $issue;
+        if ($searchCorpus !== '') {
+            $allIssues = Issue::all();
+            $bestMatch = null;
+            $bestScore = 0;
+
+            foreach ($allIssues as $issue) {
+                $score = 0;
+                $keywordsList = is_array($issue->keywords) ? $issue->keywords : [];
+                $keywordsList[] = $issue->title;
+                $keywordsList[] = str_replace(['-', '_'], ' ', $issue->slug);
+
+                if (isset($contextualSynonyms[$issue->slug])) {
+                    $keywordsList = array_merge($keywordsList, $contextualSynonyms[$issue->slug]);
+                }
+
+                foreach ($contextualSynonyms as $synKey => $synList) {
+                    if (str_contains(strtolower($issue->title), $synKey) || str_contains($issue->slug, $synKey)) {
+                        $keywordsList = array_merge($keywordsList, $synList);
                     }
                 }
+
+                $keywordsList = array_unique(array_filter(array_map('trim', $keywordsList)));
+
+                foreach ($keywordsList as $kw) {
+                    $kwClean = strtolower($kw);
+                    if ($kwClean === '') {
+                        continue;
+                    }
+
+                    if (str_contains($searchCorpus, $kwClean)) {
+                        $score += (mb_strlen($kwClean) >= 7) ? 5 : 2;
+                    }
+                }
+
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestMatch = $issue;
+                }
+            }
+
+            if ($bestMatch !== null && $bestScore > 0) {
+                return $bestMatch;
             }
         }
 
-        return Issue::orderBy('rank')->orderByDesc('total_posts')->firstOrFail();
+        // 5. Cek apakah ada tugas ScrapeJob yang sedang berjalan (running) dari perintah tombol web
+        try {
+            $runningJob = DB::table('scrape_jobs')
+                ->where('status', 'running')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($runningJob && ! empty($runningJob->topic)) {
+                $jobTopic = trim($runningJob->topic);
+                $jobSlug = Str::slug($jobTopic);
+                if ($jobSlug !== '') {
+                    return Issue::firstOrCreate(
+                        ['slug' => $jobSlug],
+                        [
+                            'title' => $jobTopic,
+                            'subtitle' => 'Pantauan Live Scraper (JupyterHub)',
+                            'rank' => Issue::count() + 1,
+                            'trend' => 'stable',
+                            'keywords' => [$jobTopic, str_replace('-', ' ', $jobSlug)],
+                            'human_pct' => 50.00,
+                            'bot_pct' => 50.00,
+                            'pos_pct' => 50.00,
+                            'neg_pct' => 50.00,
+                            'total_posts' => 0,
+                        ]
+                    );
+                }
+            }
+        } catch (\Throwable $e) {
+            // Lanjutkan jika query gagal
+        }
+
+        // 6. Anti-Fallback Salah Kamar: Jika konten sama sekali tidak cocok,
+        // arahkan ke Isu Umum Terkini, bukan memaksakan masuk ke MBG (Makan Bergizi Gratis).
+        return Issue::firstOrCreate(
+            ['slug' => 'isu-umum-terkini'],
+            [
+                'title' => 'Isu Terkini & Opini Publik',
+                'subtitle' => 'Pantauan Multitopik / Umum',
+                'rank' => Issue::count() + 1,
+                'trend' => 'stable',
+                'keywords' => ['umum', 'berita terkini', 'kebijakan publik'],
+                'human_pct' => 50.00,
+                'bot_pct' => 50.00,
+                'pos_pct' => 50.00,
+                'neg_pct' => 50.00,
+                'total_posts' => 0,
+            ]
+        );
     }
 
     /**
-     * Normalisasi kode platform agar selalu masuk ke salah satu dari 3 kanal utama: meta, x, atau tiktok.
+     * Normalisasi kode platform agar masuk ke salah satu dari 4 kanal utama: x, meta, news, atau tiktok.
      */
     public function normalizePlatform(string $rawPlatform): string
     {
         $lower = strtolower(trim($rawPlatform));
+
+        if (in_array($lower, ['news', 'berita', 'rss', 'media', 'portal', 'google news', 'google_news'], true)) {
+            return 'news';
+        }
 
         if (in_array($lower, ['meta', 'ig', 'instagram', 'fb', 'facebook'], true)) {
             return 'meta';
@@ -176,7 +344,15 @@ class PostAnalyzerService
         $authorName = trim((string) ($payload['author_name'] ?? $payload['username'] ?? $payload['penulis'] ?? 'Warga Netizen'));
         $rawHandle = trim((string) ($payload['author_handle'] ?? $payload['handle'] ?? '@'.strtolower(preg_replace('/[^a-zA-Z0-9_]/', '', $authorName) ?: 'warga_net')));
         $handle = str_starts_with($rawHandle, '@') ? $rawHandle : '@'.$rawHandle;
-        $platform = $this->normalizePlatform((string) ($payload['platform'] ?? 'x'));
+
+        $rawPlat = strtolower(trim((string) ($payload['platform'] ?? '')));
+        $rawOrigin = strtolower(trim((string) ($payload['platform_origin'] ?? '')));
+
+        if ($rawPlat === 'news' || $rawOrigin === 'news' || in_array($rawOrigin, ['news', 'berita', 'google news', 'google_news', 'rss', 'media'], true)) {
+            $platform = 'news';
+        } else {
+            $platform = $this->normalizePlatform($rawPlat !== '' ? $rawPlat : $rawOrigin);
+        }
 
         // Ambil parameter AI Qwen dari JupyterHub jika tersedia
         $rawAiBotScore = $payload['ai_bot_score'] ?? $payload['skor_bot'] ?? null;
@@ -210,6 +386,7 @@ class PostAnalyzerService
         // 3. Sinkronkan / perbarui profil akun di tabel monitored_accounts PostgreSQL
         $platformLabel = match ($platform) {
             'meta' => 'Meta (IG & FB)',
+            'news' => 'Berita & Media',
             'tiktok' => 'TikTok & YouTube',
             default => 'X (Twitter)',
         };
@@ -278,6 +455,7 @@ class PostAnalyzerService
             'post_url' => $sourceUrl !== '' ? $sourceUrl : 'https://x.com',
             'posted_at' => $payload['posted_at'] ?? now(),
             'metadata' => [
+                'platform_origin' => $payload['platform_origin'] ?? ($platform === 'news' ? 'news' : null),
                 'ingested_via' => ($aiBotScore !== null || $aiSentiment !== null || ! empty($aiInstitutions)) ? 'qwen_jupyterhub' : 'realtime_analyzer',
                 'ai_sentiment_raw' => $aiSentiment,
                 'ai_bot_reason' => $aiBotReason !== '' ? $aiBotReason : null,
@@ -370,14 +548,30 @@ class PostAnalyzerService
         $negPct = $total > 0 ? round(100 - $posPct, 1) : 0.0;
 
         $platformNames = [
-            'meta' => 'Meta (IG & FB)',
             'x' => 'X & Threads',
+            'meta' => 'Meta (IG & FB)',
+            'news' => 'Berita & Media',
             'tiktok' => 'TikTok & YouTube',
         ];
 
         $platformsData = [];
         foreach ($platformNames as $platKey => $platName) {
-            $platPosts = $posts->where('platform', $platKey);
+            $platPosts = $posts->filter(function ($p) use ($platKey) {
+                if ($platKey === 'news') {
+                    return $p->platform === 'news'
+                        || (isset($p->metadata['platform_origin']) && strtolower((string) $p->metadata['platform_origin']) === 'news')
+                        || str_contains((string) $p->post_url, 'news.google.com');
+                }
+                if ($platKey === 'meta') {
+                    $isNews = $p->platform === 'news'
+                        || (isset($p->metadata['platform_origin']) && strtolower((string) $p->metadata['platform_origin']) === 'news')
+                        || str_contains((string) $p->post_url, 'news.google.com');
+
+                    return $p->platform === 'meta' && ! $isNews;
+                }
+
+                return $p->platform === $platKey;
+            });
             $platTotal = $platPosts->count();
 
             $platHumans = $platPosts->where('is_bot', false);
