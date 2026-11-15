@@ -7,11 +7,14 @@ use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
 use App\Services\ChatbotAssistantService;
 use App\Services\PostAnalyzerService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -348,6 +351,8 @@ class SospemController extends Controller
      */
     public function ingest(Request $request, PostAnalyzerService $analyzer): JsonResponse
     {
+        $this->recordJupyterHeartbeat($request, 'ingest');
+
         $payload = $request->all();
         $issue = $analyzer->resolveIssue($payload);
 
@@ -376,6 +381,8 @@ class SospemController extends Controller
      */
     public function ingestBatch(Request $request, PostAnalyzerService $analyzer): JsonResponse
     {
+        $this->recordJupyterHeartbeat($request, 'ingest_batch');
+
         $rawPayload = $request->all();
 
         if (isset($rawPayload['items']) && is_array($rawPayload['items'])) {
@@ -425,22 +432,22 @@ class SospemController extends Controller
                 $items = isset($decoded['items']) && is_array($decoded['items']) ? $decoded['items'] : $decoded;
             }
         } else {
-            return redirect()
-                ->route('issues.index')
-                ->with('status', 'File stream_analisis_sospem.json tidak ditemukan di folder proyek dan tidak ada file yang diunggah.');
+            return $this->redirectAfterIssueAction(
+                $request,
+                'File stream_analisis_sospem.json tidak ditemukan di folder proyek dan tidak ada file yang diunggah.'
+            );
         }
 
         if (empty($items)) {
-            return redirect()
-                ->route('issues.index')
-                ->with('status', 'Format JSON kosong atau tidak valid.');
+            return $this->redirectAfterIssueAction($request, 'Format JSON kosong atau tidak valid.');
         }
 
         $result = $this->processBatchItems($items, $analyzer);
 
-        return redirect()
-            ->route('issues.index')
-            ->with('status', "Sinkronisasi JSON AI Qwen berhasil! {$result['inserted']} komentar baru ditambahkan, {$result['skipped']} duplikat dilewati.");
+        return $this->redirectAfterIssueAction(
+            $request,
+            "Sinkronisasi JSON AI Qwen berhasil! {$result['inserted']} komentar baru ditambahkan, {$result['skipped']} duplikat dilewati."
+        );
     }
 
     /**
@@ -929,6 +936,320 @@ class SospemController extends Controller
     }
 
     /**
+     * Halaman Pengaturan terpadu (Screening JupyterHub, Kelola Isu, & Metodologi).
+     */
+    public function settings(Request $request): View
+    {
+        $requestedTab = (string) $request->query('tab', 'screening');
+        $activeTab = in_array($requestedTab, ['screening', 'issues', 'methodology'], true) ? $requestedTab : 'screening';
+
+        return view('settings', [
+            'issues' => Issue::orderBy('rank')->orderByDesc('total_posts')->get(),
+            'kpi' => $this->buildKpiStats(),
+            'jupyterStatus' => $this->buildJupyterScreeningStatus(false),
+            'activeTab' => $activeTab,
+        ]);
+    }
+
+    /**
+     * Endpoint Screening Koneksi JupyterHub & Otak AI (GET /api/jupyter/status).
+     */
+    public function jupyterStatus(Request $request): JsonResponse
+    {
+        $activeProbe = $request->boolean('probe', false);
+
+        return response()->json([
+            'status' => 'ok',
+            'screening' => $this->buildJupyterScreeningStatus($activeProbe),
+        ]);
+    }
+
+    /**
+     * Redirect setelah aksi CRUD Isu atau Uji Postingan (mendukung asal form dari /settings maupun /issues).
+     */
+    private function redirectAfterIssueAction(Request $request, string $status): RedirectResponse
+    {
+        $target = $request->input('redirect_to') === 'settings'
+            ? route('settings', ['tab' => 'issues'])
+            : route('issues.index');
+
+        return redirect($target)->with('status', $status);
+    }
+
+    /**
+     * Catat sinyal heartbeat terbaru dari worker JupyterHub di cache server.
+     */
+    private function recordJupyterHeartbeat(Request $request, string $source): void
+    {
+        Cache::put('sospem_jupyter_heartbeat', [
+            'last_seen_at' => now()->toIso8601String(),
+            'last_source' => $source,
+            'ip' => (string) ($request->ip() ?? '-'),
+            'user_agent' => Str::limit((string) $request->userAgent(), 120),
+        ], now()->addDays(7));
+    }
+
+    /**
+     * Kumpulkan hasil screening koneksi JupyterHub, Ingest AI Qwen, Antrean Scrape, dan Gateway AI.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildJupyterScreeningStatus(bool $activeProbe = false): array
+    {
+        $heartbeat = Cache::get('sospem_jupyter_heartbeat');
+        $lastSeenRaw = is_array($heartbeat) ? ($heartbeat['last_seen_at'] ?? null) : null;
+        $lastSeenCarbon = is_string($lastSeenRaw) && $lastSeenRaw !== '' ? Carbon::parse($lastSeenRaw)->timezone('Asia/Jakarta') : null;
+        $secondsSinceHeartbeat = $lastSeenCarbon !== null ? (int) abs(now()->diffInSeconds($lastSeenCarbon)) : null;
+
+        $hasScrapeJobsTable = Schema::hasTable('scrape_jobs');
+
+        if ($hasScrapeJobsTable) {
+            $pendingJobs = DB::table('scrape_jobs')->where('status', 'pending')->count();
+            $runningJobs = DB::table('scrape_jobs')->where('status', 'running')->count();
+            $completedJobs = DB::table('scrape_jobs')->where('status', 'completed')->count();
+            $failedJobs = DB::table('scrape_jobs')->where('status', 'failed')->count();
+            $latestJob = DB::table('scrape_jobs')->orderByDesc('id')->first();
+
+            $stalePendingExists = $pendingJobs > 0 && DB::table('scrape_jobs')
+                ->where('status', 'pending')
+                ->where('created_at', '<', now()->subSeconds(30))
+                ->exists();
+        } else {
+            $pendingJobs = 0;
+            $runningJobs = 0;
+            $completedJobs = 0;
+            $failedJobs = 0;
+            $latestJob = null;
+            $stalePendingExists = false;
+        }
+
+        $sourceLabels = [
+            'scrape_poll' => 'Polling Antrean (/api/scrape-jobs/pending)',
+            'scrape_done' => 'Laporan Selesai (/api/scrape-jobs/{id}/done)',
+            'chat_bridge_poll' => 'Bridge Chatbot AI (/api/chat-bridge/pending)',
+            'chat_bridge_reply' => 'Balasan Chatbot Qwen (/api/chat-bridge/{id}/reply)',
+            'ingest' => 'Ingest Tunggal (/api/ingest)',
+            'ingest_batch' => 'Ingest Batch (/api/ingest-batch)',
+        ];
+
+        $hasGroq = trim((string) env('GROQ_API_KEY', '')) !== '';
+        $hasOpenAi = trim((string) env('OPENAI_API_KEY', '')) !== '';
+        $hasGemini = trim((string) env('GEMINI_API_KEY', '')) !== '';
+        $hasCloudAi = $hasGroq || $hasOpenAi || $hasGemini;
+
+        $lastSourceKey = is_array($heartbeat) ? (string) ($heartbeat['last_source'] ?? '') : '';
+        $lastSourceLabel = $sourceLabels[$lastSourceKey] ?? ($lastSourceKey !== '' ? $lastSourceKey : 'Belum ada sinyal');
+        $lastIp = is_array($heartbeat) ? (string) ($heartbeat['ip'] ?? '-') : '-';
+
+        $hasJupyterHeartbeat = $runningJobs > 0 || ($secondsSinceHeartbeat !== null && $secondsSinceHeartbeat <= 120);
+
+        if ($hasJupyterHeartbeat) {
+            $listenerState = 'connected';
+            $listenerLabel = 'Terhubung Aktif';
+            $listenerNote = 'Worker JupyterHub aktif berkomunikasi dengan website.';
+        } elseif ($hasCloudAi) {
+            $listenerState = 'connected';
+            $listenerLabel = 'Aktif (Scraper Mandiri + Groq AI)';
+            if ($lastSourceKey === '') {
+                $lastSourceLabel = 'Mesin Scraper Mandiri + Groq Cloud Qwen';
+            }
+            $listenerNote = 'Mesin Scraper Mandiri website & AI Groq aktif melayani Scrape Live dan Chatbot secara langsung.';
+        } elseif ($secondsSinceHeartbeat !== null && $secondsSinceHeartbeat <= 1800) {
+            $listenerState = 'standby';
+            $listenerLabel = 'Siaga (Standby)';
+            $listenerNote = $stalePendingExists
+                ? 'Ada antrean pending >30 detik; pastikan loop notebook JupyterHub masih berjalan.'
+                : 'JupyterHub terakhir aktif baru-baru ini.';
+        } else {
+            $listenerState = 'disconnected';
+            $listenerLabel = 'Belum Terhubung';
+            $listenerNote = ! $hasScrapeJobsTable
+                ? 'Tabel scrape_jobs belum dimigrasi — jalankan php artisan migrate.'
+                : ($stalePendingExists
+                    ? 'Tugas pending belum diambil worker. Jalankan sel listener di JupyterHub Anda.'
+                    : 'Belum ada polling dari JupyterHub ke /api/scrape-jobs/pending.');
+        }
+
+        $totalPosts = SocialPost::count();
+        $accountsCount = MonitoredAccount::count();
+        $latestPost = SocialPost::orderByDesc('updated_at')->first();
+        $lastPostAt = $latestPost && $latestPost->updated_at
+            ? Carbon::parse($latestPost->updated_at)->timezone('Asia/Jakarta')->format('d M Y, H:i:s').' WIB'
+            : 'Belum ada data komentar';
+
+        $ingestState = $totalPosts > 0 ? 'connected' : 'standby';
+        $ingestLabel = $totalPosts > 0 ? 'Data Masuk Aktif' : 'Siap Menerima Data';
+
+        $localUrl = trim((string) env('LOCAL_AGENT_URL', ''));
+
+        $cloudList = [];
+        if ($hasGroq) {
+            $cloudList[] = 'Groq';
+        }
+        if ($hasOpenAi) {
+            $cloudList[] = 'OpenAI';
+        }
+        if ($hasGemini) {
+            $cloudList[] = 'Gemini';
+        }
+        $cloudKeysSummary = ! empty($cloudList) ? implode(', ', $cloudList).' (Aktif)' : 'Belum dikonfigurasi (pakai Gateway Gratis)';
+
+        $localAgentStatus = $localUrl !== '' ? 'Terkonfigurasi' : 'Tidak diisi (opsional)';
+        $pollinationsStatus = 'Siap dipakai (Pollinations OpenAI)';
+        $aiReady = ! empty($cloudList);
+
+        $bridgeLastSeenRaw = Cache::get('sospem_chat_bridge_last_seen');
+        $bridgeSecondsAgo = is_string($bridgeLastSeenRaw) && $bridgeLastSeenRaw !== ''
+            ? (int) abs(now()->diffInSeconds(Carbon::parse($bridgeLastSeenRaw)))
+            : null;
+        $isBridgeHeartbeatActive = ($secondsSinceHeartbeat !== null && $secondsSinceHeartbeat <= 120)
+            || ($bridgeSecondsAgo !== null && $bridgeSecondsAgo <= 120);
+
+        if ($localUrl === '' && $isBridgeHeartbeatActive) {
+            $localAgentStatus = 'Terhubung via Reverse-Bridge JupyterHub (Qwen2.5)';
+            $aiReady = true;
+        }
+
+        if ($activeProbe && ! app()->runningUnitTests()) {
+            if ($localUrl !== '') {
+                $localProbe = $this->probeAiEndpoint($localUrl, ['model' => (string) env('LOCAL_AGENT_MODEL', 'qwen2.5:3b')]);
+                $localAgentStatus = $localProbe['label'];
+                if ($localProbe['ok']) {
+                    $aiReady = true;
+                }
+            }
+
+            $polliProbe = $this->probeAiEndpoint('https://text.pollinations.ai/openai', [
+                'model' => 'openai',
+                'messages' => [['role' => 'user', 'content' => 'ping']],
+            ]);
+            $pollinationsStatus = $polliProbe['label'];
+            if ($polliProbe['ok']) {
+                $aiReady = true;
+            }
+        } elseif ($activeProbe) {
+            $pollinationsStatus = 'Mode Uji (Siaga)';
+            $aiReady = true;
+        } else {
+            $pollinationsStatus = 'Siap (klik Screening Koneksi Sekarang untuk uji latensi)';
+        }
+
+        $aiState = ($aiReady || ! $activeProbe) ? ($activeProbe && ! $aiReady ? 'standby' : 'connected') : 'standby';
+        $aiLabel = $activeProbe
+            ? ($aiReady ? 'Gateway AI Terjangkau' : 'Fallback Lokal Aktif')
+            : 'Siap Digunakan';
+
+        $jobsState = ! $hasScrapeJobsTable
+            ? 'standby'
+            : ($failedJobs > 0 && $pendingJobs > 0 ? 'standby' : ($runningJobs > 0 ? 'connected' : ($stalePendingExists ? 'disconnected' : 'standby')));
+        $jobsLabel = ! $hasScrapeJobsTable
+            ? 'Tabel Belum Dimigrasi'
+            : ($runningJobs > 0
+                ? 'Sedang Memproses'
+                : ($stalePendingExists ? 'Antrean Tertunda' : 'Antrean Normal'));
+
+        $latestJobLabel = ! $hasScrapeJobsTable
+            ? 'Tabel scrape_jobs belum dimigrasi — jalankan php artisan migrate.'
+            : ($latestJob
+                ? "#{$latestJob->id} {$latestJob->topic} ({$latestJob->status}, {$latestJob->scraped_count} data)"
+                : 'Belum ada riwayat tugas');
+
+        if ($hasJupyterHeartbeat) {
+            $overallState = 'connected';
+            $overallLabel = 'JupyterHub Terhubung';
+            $overallMessage = 'Server JupyterHub aktif terhubung ke website ini dan siap/sedang menjalankan scraping maupun analisis AI Qwen.';
+        } elseif ($hasCloudAi) {
+            $overallState = 'connected';
+            $overallLabel = 'Otak AI & Scraper Aktif (Groq + Mandiri)';
+            $overallMessage = 'Otak AI Groq (Llama 3.3 & Qwen3) serta Mesin Scraper Mandiri di server lokal sudah aktif. Anda bisa langsung menggunakan Chatbot dan tombol Scrape Live tanpa menunggu JupyterHub.';
+        } elseif ($listenerState === 'standby' || $totalPosts > 0) {
+            $overallState = 'standby';
+            $overallLabel = 'Siaga / Terakhir Aktif';
+            $overallMessage = $listenerNote;
+        } else {
+            $overallState = 'disconnected';
+            $overallLabel = 'JupyterHub Belum Terdeteksi';
+            $overallMessage = 'Belum ada sinyal polling atau ingest dari notebook JupyterHub. Pastikan script worker JupyterHub diarahkan ke URL website ini.';
+        }
+
+        return [
+            'checked_at' => now()->timezone('Asia/Jakarta')->format('d M Y, H:i:s').' WIB',
+            'overall_state' => $overallState,
+            'overall_label' => $overallLabel,
+            'overall_message' => $overallMessage,
+            'listener' => [
+                'state' => $listenerState,
+                'label' => $listenerLabel,
+                'last_seen_label' => $lastSeenCarbon !== null ? $lastSeenCarbon->format('d M Y, H:i:s').' WIB ('.$lastSeenCarbon->diffForHumans().')' : 'Belum pernah tercatat',
+                'last_source_label' => $lastSourceLabel,
+                'last_ip' => $lastIp,
+                'note' => $listenerNote,
+            ],
+            'ingest' => [
+                'state' => $ingestState,
+                'label' => $ingestLabel,
+                'total_posts' => $totalPosts,
+                'accounts_count' => $accountsCount,
+                'last_post_at' => $lastPostAt,
+            ],
+            'ai_engine' => [
+                'state' => $aiState,
+                'label' => $aiLabel,
+                'local_agent_url' => $localUrl !== '' ? $localUrl : 'Tidak dikonfigurasi',
+                'local_agent_status' => $localAgentStatus,
+                'cloud_keys_summary' => $cloudKeysSummary,
+                'pollinations_status' => $pollinationsStatus,
+            ],
+            'jobs' => [
+                'state' => $jobsState,
+                'label' => $jobsLabel,
+                'pending' => $pendingJobs,
+                'running' => $runningJobs,
+                'completed' => $completedJobs,
+                'failed' => $failedJobs,
+                'latest_label' => $latestJobLabel,
+            ],
+        ];
+    }
+
+    /**
+     * Uji keterjangkauan endpoint AI eksternal saat user melakukan Screening manual.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{ok: bool, label: string}
+     */
+    private function probeAiEndpoint(string $url, array $payload): array
+    {
+        $start = microtime(true);
+
+        try {
+            $resp = Http::connectTimeout(3)
+                ->timeout(5)
+                ->withHeaders(['User-Agent' => 'SOSPEM-Screening/1.0'])
+                ->acceptJson()
+                ->post($url, $payload);
+
+            $latencyMs = (int) round((microtime(true) - $start) * 1000);
+            if ($resp->successful()) {
+                return [
+                    'ok' => true,
+                    'label' => "Terhubung ({$latencyMs} ms)",
+                ];
+            }
+
+            return [
+                'ok' => false,
+                'label' => "HTTP {$resp->status()} ({$latencyMs} ms)",
+            ];
+        } catch (Throwable) {
+            return [
+                'ok' => false,
+                'label' => 'Tidak dapat dijangkau / Timeout',
+            ];
+        }
+    }
+
+    /**
      * Halaman Metodologi & Kepatuhan UU PDP.
      */
     public function methodology(): View
@@ -992,9 +1313,7 @@ class SospemController extends Controller
         $analyzer->recalculateIssueStats($issue);
         $analyzer->rerankAllIssues();
 
-        return redirect()
-            ->route('issues.index')
-            ->with('status', "Isu \"{$issue->title}\" berhasil disimpan ke PostgreSQL.");
+        return $this->redirectAfterIssueAction($request, "Isu \"{$issue->title}\" berhasil disimpan ke PostgreSQL.");
     }
 
     /**
@@ -1010,24 +1329,20 @@ class SospemController extends Controller
             'trend' => $validated['trend'],
         ]);
 
-        return redirect()
-            ->route('issues.index')
-            ->with('status', "Status tren isu \"{$issue->title}\" berhasil diperbarui.");
+        return $this->redirectAfterIssueAction($request, "Status tren isu \"{$issue->title}\" berhasil diperbarui.");
     }
 
     /**
      * Hapus isu dari PostgreSQL dan urutkan ulang nomor rank.
      */
-    public function destroyIssue(Issue $issue, PostAnalyzerService $analyzer): RedirectResponse
+    public function destroyIssue(Request $request, Issue $issue, PostAnalyzerService $analyzer): RedirectResponse
     {
         $title = $issue->title;
         $issue->delete();
 
         $analyzer->rerankAllIssues();
 
-        return redirect()
-            ->route('issues.index')
-            ->with('status', "Isu \"{$title}\" berhasil dihapus dari pantauan.");
+        return $this->redirectAfterIssueAction($request, "Isu \"{$title}\" berhasil dihapus dari pantauan.");
     }
 
     /**
@@ -1055,9 +1370,10 @@ class SospemController extends Controller
             ? "+ Positif ({$post->sentiment_conf}%)"
             : "- Negatif ({$post->sentiment_conf}%)";
 
-        return redirect()
-            ->route('issues.index')
-            ->with('status', "Postingan berhasil dianalisis & disimpan ke PostgreSQL! Hasil Deteksi: {$kategori} · Sentimen: {$sentimenLabel}.");
+        return $this->redirectAfterIssueAction(
+            $request,
+            "Postingan berhasil dianalisis & disimpan ke PostgreSQL! Hasil Deteksi: {$kategori} · Sentimen: {$sentimenLabel}."
+        );
     }
 
     /**
@@ -1134,10 +1450,6 @@ class SospemController extends Controller
                 $agentModel = 'qwen2.5:3b';
             }
 
-            $rag = $this->buildDatabaseRagContext($normalizedSlug);
-            $externalContext = $assistant->gatherExternalContext($message, $rag);
-            $systemPrompt = $assistant->buildSystemPrompt($rag, $externalContext);
-
             $historyMessages = [];
             if (! empty($validated['history']) && is_array($validated['history'])) {
                 foreach (array_slice($validated['history'], -6) as $item) {
@@ -1152,10 +1464,16 @@ class SospemController extends Controller
                 }
             }
 
+            $effectiveMessage = $assistant->resolveContextualMessage($message, $historyMessages);
+
+            $rag = $this->buildDatabaseRagContext($normalizedSlug);
+            $externalContext = $assistant->gatherExternalContext($effectiveMessage, $rag);
+            $systemPrompt = $assistant->buildSystemPrompt($rag, $externalContext);
+
             $messagesPayload = array_merge(
                 [['role' => 'system', 'content' => $systemPrompt]],
                 $historyMessages,
-                [['role' => 'user', 'content' => $message]]
+                [['role' => 'user', 'content' => $effectiveMessage]]
             );
 
             $canCallExternal = $agentMode !== 'database'
@@ -1165,14 +1483,45 @@ class SospemController extends Controller
             $agentError = null;
             $startTime = microtime(true);
 
-            if ($canCallExternal && $this->isLocalAgentReachable($agentUrl)) {
+            if (
+                $agentMode !== 'external'
+                && $assistant->isWeatherIntent($effectiveMessage)
+                && ! $assistant->isGovernmentTopicIntent($effectiveMessage)
+                && ! empty($externalContext['weather']['ok'])
+            ) {
+                return response()->json([
+                    'status' => 'ok',
+                    'source' => 'database_rag_engine',
+                    'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                    'reply' => $assistant->cleanReplyText((string) $externalContext['weather']['formatted']),
+                    'kpi' => $rag['kpi'],
+                ]);
+            }
+
+            if ($agentMode !== 'database') {
+                $bridgeReply = $this->dispatchViaJupyterChatBridge($messagesPayload, $agentModel);
+                if (is_string($bridgeReply) && trim($bridgeReply) !== '') {
+                    return response()->json([
+                        'status' => 'ok',
+                        'source' => 'jupyter_qwen',
+                        'agent_model' => $agentModel,
+                        'latency_ms' => (int) round((microtime(true) - $startTime) * 1000),
+                        'reply' => $assistant->cleanReplyText($bridgeReply),
+                        'kpi' => $rag['kpi'],
+                    ]);
+                }
+            }
+
+            if ($canCallExternal && ! $this->isLocalEndpointReachable($agentUrl)) {
+                $agentError = 'Port Agent lokal tidak aktif.';
+            } elseif ($canCallExternal) {
                 try {
                     $lowerUrl = strtolower($agentUrl);
                     if (str_contains($lowerUrl, '/api/generate')) {
                         $body = [
                             'model' => $agentModel,
                             'system' => $systemPrompt,
-                            'prompt' => $message,
+                            'prompt' => $effectiveMessage,
                             'stream' => false,
                         ];
                     } elseif (str_contains($lowerUrl, '/api/chat') || str_contains($lowerUrl, '/v1/chat/completions')) {
@@ -1185,16 +1534,16 @@ class SospemController extends Controller
                         $body = [
                             'model' => $agentModel,
                             'system_prompt' => $systemPrompt,
-                            'message' => $message,
-                            'prompt' => $message,
+                            'message' => $effectiveMessage,
+                            'prompt' => $effectiveMessage,
                             'context' => $rag['summary']."\n\n".$externalContext['extra_prompt'],
                             'messages' => $messagesPayload,
                             'stream' => false,
                         ];
                     }
 
-                    $response = Http::connectTimeout(3)
-                        ->timeout(45)
+                    $response = Http::connectTimeout(5)
+                        ->timeout(25)
                         ->acceptJson()
                         ->post($agentUrl, $body);
 
@@ -1230,8 +1579,6 @@ class SospemController extends Controller
                 } catch (Throwable $e) {
                     $agentError = 'Agent lokal tidak dapat dihubungi.';
                 }
-            } elseif ($canCallExternal) {
-                $agentError = 'Port Agent Lokal belum aktif.';
             }
 
             if ($agentMode === 'external' && $agentError !== null) {
@@ -1245,7 +1592,7 @@ class SospemController extends Controller
             }
 
             if ($agentMode === 'auto') {
-                $generativeReply = $assistant->callFreeGenerativeAi($messagesPayload, $externalContext['knowledge'] ?? null);
+                $generativeReply = $assistant->callFreeGenerativeAi($messagesPayload);
                 if (is_string($generativeReply) && trim($generativeReply) !== '') {
                     return response()->json([
                         'status' => 'ok',
@@ -1257,7 +1604,7 @@ class SospemController extends Controller
                 }
             }
 
-            $fallbackReply = $assistant->generateSmartConversationalReply($message, $rag, $externalContext);
+            $fallbackReply = $assistant->generateSmartConversationalReply($effectiveMessage, $rag, $externalContext);
 
             return response()->json([
                 'status' => 'ok',
@@ -1279,33 +1626,6 @@ class SospemController extends Controller
                 'reply' => 'Maaf, terjadi kendala sementara di server saat memproses pertanyaan Anda. Silakan coba beberapa detik lagi.',
             ], 500);
         }
-    }
-
-    /**
-     * Cek cepat apakah host Agent Lokal (localhost / 127.0.0.1) terbuka agar tidak menunggu timeout TCP.
-     */
-    private function isLocalAgentReachable(string $url): bool
-    {
-        if (app()->runningUnitTests()) {
-            return true;
-        }
-
-        $parts = parse_url($url);
-        $host = $parts['host'] ?? '';
-        $port = $parts['port'] ?? (($parts['scheme'] ?? 'http') === 'https' ? 443 : 80);
-
-        if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
-            return true;
-        }
-
-        $conn = @fsockopen($host, (int) $port, $errno, $errstr, 0.15);
-        if (is_resource($conn)) {
-            fclose($conn);
-
-            return true;
-        }
-
-        return false;
     }
 
     /**
@@ -1549,27 +1869,43 @@ class SospemController extends Controller
         }
 
         $limit = (int) ($validated['limit'] ?? 10);
+        $heartbeat = Cache::get('sospem_jupyter_heartbeat');
+        $lastSeenRaw = is_array($heartbeat) ? ($heartbeat['last_seen_at'] ?? null) : null;
+        $jupyterActive = is_string($lastSeenRaw)
+            && $lastSeenRaw !== ''
+            && (int) abs(now()->diffInSeconds(Carbon::parse($lastSeenRaw))) <= 120;
+
+        $shouldWaitForWorker = $jupyterActive || app()->runningUnitTests();
+
         $jobId = DB::table('scrape_jobs')->insertGetId([
             'topic' => $topic,
             'limit' => $limit,
-            'status' => 'running',
+            'status' => $shouldWaitForWorker ? 'pending' : 'running',
             'scraped_count' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        if ($shouldWaitForWorker) {
+            return response()->json([
+                'status' => 'ok',
+                'job_id' => $jobId,
+                'issue_slug' => $slug,
+            ]);
+        }
 
         $issue = $analyzer->resolveIssue([
             'issue_slug' => $slug,
             'issue_title' => $topic,
         ]);
 
-        // 1. Coba delegasikan ke worker MacBook jika kebetulan sedang aktif
+        // 1. Coba delegasikan ke worker eksternal jika dikonfigurasi dan sedang aktif
         $delegated = false;
-        $workerUrl = env('SCRAPER_WORKER_URL', '');
+        $workerUrl = trim((string) env('SCRAPER_WORKER_URL', ''));
         if ($workerUrl !== '') {
             try {
-                $resp = \Illuminate\Support\Facades\Http::withHeaders([
-                    'X-Webhook-Secret' => env('SCRAPER_WEBHOOK_SECRET', 'sospem-secret-key-2026'),
+                $resp = Http::withHeaders([
+                    'X-Webhook-Secret' => (string) env('SCRAPER_WEBHOOK_SECRET', 'sospem-secret-key-2026'),
                     'ngrok-skip-browser-warning' => 'true',
                 ])->timeout(2)->post($workerUrl, [
                     'job_id' => $jobId,
@@ -1580,12 +1916,12 @@ class SospemController extends Controller
                 if ($resp->successful()) {
                     $delegated = true;
                 }
-            } catch (\Throwable $e) {
+            } catch (Throwable) {
                 $delegated = false;
             }
         }
 
-        // 2. Jika worker lokal offline (atau tidak dipakai), jalankan 100% mandiri di server Hostinger
+        // 2. Jika worker lokal/JupyterHub sedang offline, jalankan mandiri di server website
         if (! $delegated) {
             $scrapedCount = $this->runStandaloneHostingerScrape($topic, $slug, $limit, $issue, $analyzer);
             DB::table('scrape_jobs')->where('id', $jobId)->update([
@@ -1605,8 +1941,10 @@ class SospemController extends Controller
     /**
      * Diambil oleh loop polling JupyterHub setiap beberapa detik.
      */
-    public function getPendingJob(): JsonResponse
+    public function getPendingJob(Request $request): JsonResponse
     {
+        $this->recordJupyterHeartbeat($request, 'scrape_poll');
+
         $job = DB::table('scrape_jobs')
             ->where('status', 'pending')
             ->orderBy('id')
@@ -1633,6 +1971,8 @@ class SospemController extends Controller
      */
     public function completeJob(Request $request, int|string $id): JsonResponse
     {
+        $this->recordJupyterHeartbeat($request, 'scrape_done');
+
         DB::table('scrape_jobs')
             ->where('id', $id)
             ->update([
@@ -1665,105 +2005,237 @@ class SospemController extends Controller
     }
 
     /**
-     * Mesin scraping mandiri 100% di server Hostinger (tanpa ketergantungan laptop lokal).
+     * Mesin scraping mandiri di server website saat worker lokal/JupyterHub sedang offline.
      */
-    private function runStandaloneHostingerScrape(string $topic, string $slug, int $limit, $issue, PostAnalyzerService $analyzer): int
+    private function runStandaloneHostingerScrape(string $topic, string $slug, int $limit, ?Issue $issue, PostAnalyzerService $analyzer): int
     {
         $inserted = 0;
+        $sources = [
+            ['query' => "{$topic} indonesia", 'prefix' => 'news_', 'platform' => 'news', 'default_user' => null],
+            ['query' => "{$topic} site:youtube.com", 'prefix' => 'yt_', 'platform' => 'youtube', 'default_user' => 'YouTube Public Channel'],
+        ];
 
-        // A. Tarik Berita Nasional Terbaru via Google News RSS Indonesia
-        try {
-            $rssUrl = 'https://news.google.com/rss/search?q=' . urlencode($topic . ' indonesia') . '&hl=id&gl=ID&ceid=ID:id';
-            $rssResp = \Illuminate\Support\Facades\Http::withHeaders([
-                'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
-            ])->timeout(10)->get($rssUrl);
-
-            if ($rssResp->successful()) {
-                $xml = @simplexml_load_string($rssResp->body());
-                if ($xml && isset($xml->channel->item)) {
-                    foreach ($xml->channel->item as $item) {
-                        if ($inserted >= $limit) {
-                            break;
-                        }
-                        $title = trim((string) $item->title);
-                        $link = trim((string) $item->link);
-                        $pubDate = trim((string) $item->pubDate);
-                        $source = isset($item->source) ? trim((string) $item->source) : 'Google News';
-
-                        if ($title === '') {
-                            continue;
-                        }
-
-                        $payload = [
-                            'comment_id' => 'news_' . md5($link !== '' ? $link : $title),
-                            'issue_slug' => $slug,
-                            'issue_title' => $topic,
-                            'platform' => 'news',
-                            'username' => $source,
-                            'handle' => '@' . Str::slug($source, '_'),
-                            'content' => $title,
-                            'source_news' => $link,
-                            'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate)) : now()->toDateTimeString(),
-                        ];
-
-                        $post = $analyzer->ingestAndAnalyze($issue, $payload);
-                        if ($post) {
-                            $inserted++;
-                        }
-                    }
-                }
+        foreach ($sources as $src) {
+            if ($inserted >= $limit) {
+                break;
             }
-        } catch (\Throwable $e) {
-            // Lanjut ke sumber berikutnya jika RSS gagal
-        }
 
-        // B. Tarik Diskusi & Video YouTube Terkait Topik jika kuota limit belum penuh
-        if ($inserted < $limit) {
             try {
-                $ytRssUrl = 'https://news.google.com/rss/search?q=' . urlencode($topic . ' site:youtube.com') . '&hl=id&gl=ID&ceid=ID:id';
-                $ytResp = \Illuminate\Support\Facades\Http::withHeaders([
+                $rssUrl = 'https://news.google.com/rss/search?q='.urlencode($src['query']).'&hl=id&gl=ID&ceid=ID:id';
+                $rssResp = Http::withHeaders([
                     'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
-                ])->timeout(10)->get($ytRssUrl);
+                ])->timeout(10)->get($rssUrl);
 
-                if ($ytResp->successful()) {
-                    $xml = @simplexml_load_string($ytResp->body());
-                    if ($xml && isset($xml->channel->item)) {
-                        foreach ($xml->channel->item as $item) {
-                            if ($inserted >= $limit) {
-                                break;
-                            }
-                            $title = trim((string) $item->title);
-                            $link = trim((string) $item->link);
-                            $pubDate = trim((string) $item->pubDate);
-                            if ($title === '') {
-                                continue;
-                            }
-
-                            $payload = [
-                                'comment_id' => 'yt_' . md5($link !== '' ? $link : $title),
-                                'issue_slug' => $slug,
-                                'issue_title' => $topic,
-                                'platform' => 'youtube',
-                                'username' => 'YouTube Public Channel',
-                                'handle' => '@youtube_id',
-                                'content' => $title,
-                                'source_news' => $link,
-                                'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate)) : now()->toDateTimeString(),
-                            ];
-
-                            $post = $analyzer->ingestAndAnalyze($issue, $payload);
-                            if ($post) {
-                                $inserted++;
-                            }
-                        }
-                    }
+                if (! $rssResp->successful()) {
+                    continue;
                 }
-            } catch (\Throwable $e) {
-                // Abaikan jika gagal
+
+                $xml = @simplexml_load_string($rssResp->body());
+                if (! $xml || ! isset($xml->channel->item)) {
+                    continue;
+                }
+
+                foreach ($xml->channel->item as $item) {
+                    if ($inserted >= $limit) {
+                        break;
+                    }
+
+                    $title = trim((string) $item->title);
+                    if ($title === '') {
+                        continue;
+                    }
+
+                    $link = trim((string) $item->link);
+                    $pubDate = trim((string) $item->pubDate);
+                    $sourceName = $src['default_user'] ?? (isset($item->source) ? trim((string) $item->source) : 'Google News');
+                    $handleSlug = $src['default_user'] !== null ? 'youtube_id' : Str::slug($sourceName, '_');
+
+                    $analyzer->ingestAndAnalyze($issue, [
+                        'comment_id' => $src['prefix'].md5($link !== '' ? $link : $title),
+                        'issue_slug' => $slug,
+                        'issue_title' => $topic,
+                        'platform' => $src['platform'],
+                        'username' => $sourceName,
+                        'handle' => '@'.($handleSlug !== '' ? $handleSlug : 'warga_net'),
+                        'content' => $title,
+                        'source_news' => $link,
+                        'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate) ?: time()) : now()->toDateTimeString(),
+                    ]);
+                    $inserted++;
+                }
+            } catch (Throwable) {
+                // Lanjut ke sumber berikutnya jika RSS gagal
             }
         }
 
         return $inserted;
     }
 
+    /**
+     * Diambil oleh thread Reverse-Bridge Chatbot di JupyterHub untuk memproses pertanyaan user.
+     */
+    public function getPendingChatBridge(Request $request): JsonResponse
+    {
+        if (! $this->isAuthorizedBridgeRequest($request)) {
+            return response()->json(['status' => 'unauthorized'], 401);
+        }
+
+        $this->recordJupyterHeartbeat($request, 'chat_bridge_poll');
+        Cache::put('sospem_chat_bridge_last_seen', now()->toIso8601String(), now()->addMinutes(10));
+
+        $task = Cache::pull('sospem_chat_bridge_pending');
+
+        if (is_array($task) && ! empty($task['id']) && ! empty($task['messages'])) {
+            return response()->json([
+                'status' => 'ok',
+                'task' => $task,
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'idle',
+            'task' => null,
+        ]);
+    }
+
+    /**
+     * Menerima balasan Chatbot yang dihasilkan oleh model Qwen2.5 di server JupyterHub.
+     */
+    public function completeChatBridge(Request $request, string $taskId): JsonResponse
+    {
+        if (! $this->isAuthorizedBridgeRequest($request)) {
+            return response()->json(['status' => 'unauthorized'], 401);
+        }
+
+        $safeTaskId = preg_replace('/[^a-zA-Z0-9_-]/', '', $taskId) ?? '';
+        if ($safeTaskId === '') {
+            return response()->json(['status' => 'error', 'message' => 'Task ID tidak valid.'], 422);
+        }
+
+        $this->recordJupyterHeartbeat($request, 'chat_bridge_reply');
+        Cache::put('sospem_chat_bridge_last_seen', now()->toIso8601String(), now()->addMinutes(10));
+
+        $validated = $request->validate([
+            'reply' => ['required', 'string', 'max:10000'],
+            'model' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $modelName = trim((string) ($validated['model'] ?? 'qwen2.5:1.5b'));
+
+        Cache::put("sospem_chat_bridge_reply_{$safeTaskId}", [
+            'reply' => trim((string) $validated['reply']),
+            'model' => $modelName !== '' ? $modelName : 'qwen2.5:1.5b',
+        ], now()->addMinutes(5));
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    /**
+     * Validasi opsional header X-Sospem-Key jika dikonfigurasi di environment.
+     */
+    private function isAuthorizedBridgeRequest(Request $request): bool
+    {
+        $expectedKey = trim((string) env('SOSPEM_API_KEY', ''));
+        if ($expectedKey === '') {
+            return true;
+        }
+
+        return hash_equals($expectedKey, trim((string) $request->header('X-Sospem-Key', '')));
+    }
+
+    /**
+     * Teruskan pertanyaan Chatbot ke worker JupyterHub Qwen2.5 melalui antrean Reverse-Polling Bridge.
+     *
+     * @param  array<int, array<string, string>>  $messagesPayload
+     */
+    private function dispatchViaJupyterChatBridge(array $messagesPayload, string $agentModel): ?string
+    {
+        $bridgeLastSeenRaw = Cache::get('sospem_chat_bridge_last_seen');
+        $isBridgeActive = false;
+
+        if (is_string($bridgeLastSeenRaw) && $bridgeLastSeenRaw !== '') {
+            $diff = (int) abs(now()->diffInSeconds(Carbon::parse($bridgeLastSeenRaw)));
+            if ($diff <= 45) {
+                $isBridgeActive = true;
+            }
+        }
+
+        if (! $isBridgeActive) {
+            $heartbeat = Cache::get('sospem_jupyter_heartbeat');
+            if (is_array($heartbeat)) {
+                $lastSource = (string) ($heartbeat['last_source'] ?? '');
+                $lastSeenRaw = $heartbeat['last_seen_at'] ?? null;
+                if (in_array($lastSource, ['chat_bridge_poll', 'chat_bridge_reply'], true)
+                    && is_string($lastSeenRaw)
+                    && $lastSeenRaw !== '') {
+                    $diff = (int) abs(now()->diffInSeconds(Carbon::parse($lastSeenRaw)));
+                    if ($diff <= 45) {
+                        $isBridgeActive = true;
+                    }
+                }
+            }
+        }
+
+        if (! $isBridgeActive) {
+            return null;
+        }
+
+        $taskId = (string) Str::uuid();
+        $replyCacheKey = "sospem_chat_bridge_reply_{$taskId}";
+
+        Cache::put('sospem_chat_bridge_pending', [
+            'id' => $taskId,
+            'model' => $agentModel,
+            'messages' => $messagesPayload,
+            'created_at' => now()->toIso8601String(),
+        ], now()->addSeconds(30));
+
+        if (app()->runningUnitTests()) {
+            $result = Cache::pull($replyCacheKey);
+
+            return is_array($result) && is_string($result['reply'] ?? null) && trim($result['reply']) !== ''
+                ? trim($result['reply'])
+                : null;
+        }
+
+        $deadline = microtime(true) + 18.0;
+        while (microtime(true) < $deadline) {
+            $result = Cache::pull($replyCacheKey);
+            if (is_array($result) && is_string($result['reply'] ?? null) && trim($result['reply']) !== '') {
+                return trim($result['reply']);
+            }
+            usleep(250000);
+        }
+
+        return null;
+    }
+
+    /**
+     * Cek cepat ketersediaan port localhost agar fallback AI cloud tidak menunggu timeout saat Ollama mati.
+     */
+    private function isLocalEndpointReachable(string $url): bool
+    {
+        $parsed = parse_url($url);
+        $host = is_array($parsed) ? strtolower((string) ($parsed['host'] ?? '')) : '';
+
+        if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true) || app()->runningUnitTests()) {
+            return true;
+        }
+
+        $scheme = is_array($parsed) ? strtolower((string) ($parsed['scheme'] ?? 'http')) : 'http';
+        $port = is_array($parsed) && isset($parsed['port'])
+            ? (int) $parsed['port']
+            : ($scheme === 'https' ? 443 : 80);
+
+        $errno = 0;
+        $errstr = '';
+        $conn = @fsockopen($host, $port, $errno, $errstr, 0.8);
+        if (is_resource($conn)) {
+            fclose($conn);
+
+            return true;
+        }
+
+        return false;
+    }
 }

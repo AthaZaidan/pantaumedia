@@ -3,7 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="SOSPEM — Sistem Pemantauan Opini Publik &amp; Deteksi Jaringan Bot Media Sosial">
+    <meta name="theme-color" content="#121212">
     <title>@yield('title', 'SOSPEM — Pemantauan Opini Publik & Jaringan Bot')</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2318b26f'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='Inter,Arial,sans-serif' font-weight='700' font-size='18'%3ES%3C/text%3E%3C/svg%3E">
 
     <!-- Inisialisasi Tema Sejak Awal (Tanpa Kedipan Saat Pindah Halaman) -->
     <script>
@@ -118,6 +121,26 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        /* Custom Thin Scrollbars */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--color-border-strong) var(--color-surface);
+        }
+        ::-webkit-scrollbar {
+            width: 7px;
+            height: 7px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--color-surface);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-border-strong);
+            border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-text-muted);
+        }
+
         .tabular {
             font-variant-numeric: tabular-nums;
             font-feature-settings: "tnum";
@@ -188,15 +211,15 @@
             width: 34px;
             height: 34px;
             border-radius: 8px;
-            background-color: var(--color-surface-pill);
-            border: 1px solid var(--color-border);
-            color: var(--color-text-primary);
+            background-color: var(--color-teal);
+            border: 1px solid var(--color-teal);
+            color: #ffffff;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
             font-weight: 700;
-            font-size: 13px;
+            font-size: 14px;
         }
 
         .brand-text-wrap {
@@ -296,6 +319,7 @@
             border-top: 1px solid var(--color-border-subtle);
             display: flex;
             flex-direction: column;
+            gap: 8px;
             width: 100%;
         }
 
@@ -362,9 +386,94 @@
             gap: 20px;
         }
 
+        /* Mobile Topbar & Slide-Over Navigation Drawer */
+        .mobile-topbar {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 14px;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+        }
+
+        .mobile-topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mobile-icon-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            border: 1px solid var(--color-border);
+            background: var(--color-surface-subtle);
+            color: var(--color-text-primary);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .mobile-icon-btn:hover {
+            background: var(--color-surface-hover);
+            border-color: var(--color-border-strong);
+        }
+
+        .mobile-sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(2px);
+            z-index: 1050;
+        }
+        .mobile-sidebar-backdrop.is-open {
+            display: block;
+        }
+
         @media (max-width: 768px) {
+            .mobile-topbar {
+                display: flex;
+            }
+
+            .left-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 250px !important;
+                padding: 16px 12px !important;
+                transform: translateX(-100%);
+                transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+                z-index: 1100;
+                box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+            }
+
+            .left-sidebar.is-mobile-open {
+                transform: translateX(0);
+            }
+
+            .left-sidebar.is-minimized .brand-link,
+            .left-sidebar.is-minimized .side-nav-label,
+            .left-sidebar.is-minimized .theme-toggle-label,
+            .left-sidebar.is-minimized .auth-user-info,
+            .left-sidebar.is-minimized .logout-btn-label {
+                display: flex;
+            }
+            .left-sidebar.is-minimized .side-nav-link,
+            .left-sidebar.is-minimized .theme-toggle-btn {
+                justify-content: flex-start;
+                padding: 0 11px;
+            }
+            .left-sidebar.is-minimized .sidebar-top-row {
+                justify-content: space-between;
+            }
+
             .main-workspace {
-                padding: 18px 16px 48px;
+                padding: 14px 14px 48px;
+                gap: 14px;
             }
         }
 
@@ -490,6 +599,8 @@
 </head>
 <body>
 
+    <div class="mobile-sidebar-backdrop" id="mobileBackdrop" onclick="closeMobileSidebar()"></div>
+
     <div class="app-shell">
 
         <!-- SIDEBAR KIRI: BISA MINIMIZE (LOGO SAJA) & MAXIMIZE (LOGO + TEKS) -->
@@ -522,14 +633,6 @@
                     <span class="side-nav-label">Dashboard Isu</span>
                 </a>
 
-                <a href="{{ route('issues.index') }}" class="side-nav-link {{ request()->routeIs('issues.*') ? 'is-active' : '' }}" title="Tambah & Kelola Isu Pantauan">
-                    <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    <span class="side-nav-label">Kelola Isu</span>
-                </a>
-
                 <a href="{{ route('accounts') }}" class="side-nav-link {{ request()->routeIs('accounts') ? 'is-active' : '' }}" title="Audit Profil & Jaringan Akun">
                     <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
@@ -555,17 +658,17 @@
                     </svg>
                     <span class="side-nav-label">Chatbot</span>
                 </a>
+            </nav>
 
-                <a href="{{ route('methodology') }}" class="side-nav-link {{ request()->routeIs('methodology') ? 'is-active' : '' }}" title="Metodologi & Kepatuhan UU PDP">
+            <div class="sidebar-bottom">
+                <a href="{{ route('settings') }}" class="side-nav-link {{ request()->routeIs('settings') || request()->routeIs('issues.*') || request()->routeIs('methodology') ? 'is-active' : '' }}" title="Pengaturan, Kelola Isu, Metodologi & Screening JupyterHub">
                     <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
-                    <span class="side-nav-label">Metodologi &amp; UU PDP</span>
+                    <span class="side-nav-label">Pengaturan</span>
                 </a>
-            </nav>
 
-            <div class="sidebar-bottom">
                 <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Ganti Mode Malam / Mode Terang">
                     <!-- Ikon Matahari (Tampil saat Dark Mode untuk beralih ke Light Mode) -->
                     <svg id="themeIconSun" class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
@@ -609,6 +712,34 @@
 
         <!-- AREA KONTEN UTAMA -->
         <div class="main-workspace">
+            <div class="mobile-topbar">
+                <div class="mobile-topbar-left">
+                    <button type="button" class="mobile-icon-btn" onclick="toggleMobileSidebar()" aria-label="Buka Menu Navigasi">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <a href="{{ route('dashboard') }}" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--color-text-primary); font-weight: 700; font-size: 14px;">
+                        <span class="brand-logo-box" style="width: 28px; height: 28px; font-size: 12px;">S</span>
+                        <span>SOSPEM</span>
+                    </a>
+                </div>
+
+                <button type="button" class="mobile-icon-btn" onclick="toggleTheme()" aria-label="Ganti Tema">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
+
             @yield('content')
         </div>
 
@@ -627,15 +758,18 @@
             const sunIcon = document.getElementById('themeIconSun');
             const moonIcon = document.getElementById('themeIconMoon');
             const label = document.getElementById('themeToggleLabel');
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
 
             if (currentTheme === 'dark') {
                 sunIcon.style.display = 'block';
                 moonIcon.style.display = 'none';
                 label.innerText = 'Mode Terang';
+                if (themeMeta) themeMeta.setAttribute('content', '#121212');
             } else {
                 sunIcon.style.display = 'none';
                 moonIcon.style.display = 'block';
                 label.innerText = 'Mode Malam';
+                if (themeMeta) themeMeta.setAttribute('content', '#f8fafc');
             }
         }
 
@@ -646,9 +780,36 @@
                 sidebar.classList.add('is-minimized');
             }
             syncThemeButtonUI();
+
+            document.querySelectorAll('.side-nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth <= 768) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
         })();
 
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('appSidebar');
+            const backdrop = document.getElementById('mobileBackdrop');
+            const willOpen = !sidebar.classList.contains('is-mobile-open');
+            sidebar.classList.toggle('is-mobile-open', willOpen);
+            backdrop.classList.toggle('is-open', willOpen);
+        }
+
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('appSidebar');
+            const backdrop = document.getElementById('mobileBackdrop');
+            sidebar.classList.remove('is-mobile-open');
+            backdrop.classList.remove('is-open');
+        }
+
         function toggleSidebar() {
+            if (window.innerWidth <= 768) {
+                closeMobileSidebar();
+                return;
+            }
             const sidebar = document.getElementById('appSidebar');
             sidebar.classList.toggle('is-minimized');
             localStorage.setItem('sospem_sidebar_minimized', sidebar.classList.contains('is-minimized'));

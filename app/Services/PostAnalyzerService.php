@@ -6,7 +6,9 @@ use App\Models\Issue;
 use App\Models\MonitoredAccount;
 use App\Models\SocialPost;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Throwable;
 
 class PostAnalyzerService
 {
@@ -219,7 +221,7 @@ class PostAnalyzerService
                     );
                 }
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             // Lanjutkan jika query gagal
         }
 
@@ -673,39 +675,48 @@ class PostAnalyzerService
     private function enrichWithGroqQwen(string $content, string $authorName, string $handle, string $platform, string $issueTitle, array $payload): array
     {
         $apiKey = trim((string) env('GROQ_API_KEY', ''));
-        if ($apiKey === '' || $content === '') {
+        if ($apiKey === '' || $content === '' || app()->runningUnitTests()) {
             return $payload;
         }
 
-        $model = trim((string) env('GROQ_QWEN_MODEL', 'qwen/qwen3-32b'));
+        $candidates = array_values(array_unique(array_filter([
+            trim((string) env('GROQ_QWEN_MODEL', 'qwen/qwen3.8-27b')),
+            'qwen/qwen3.8-27b',
+            'openai/gpt-oss-120b',
+        ])));
 
         $systemPrompt = 'Kamu adalah analis opini publik & deteksi bot media sosial Indonesia. '
-            . 'Balas HANYA dalam format JSON valid tanpa markdown atau teks tambahan dengan struktur persis: '
-            . '{"sentimen_umum":"Positif|Negatif|Netral","skor_bot":0-100,"alasan_bot":"string singkat bahasa Indonesia",'
-            . '"analisis_lembaga":[{"lembaga":"nama instansi/tokoh","sentimen":"Positif|Negatif|Netral","alasan":"singkat"}]}';
+            .'Balas HANYA dalam format JSON valid tanpa markdown atau teks tambahan dengan struktur persis: '
+            .'{"sentimen_umum":"Positif|Negatif|Netral","skor_bot":0-100,"alasan_bot":"string singkat bahasa Indonesia",'
+            .'"analisis_lembaga":[{"lembaga":"nama instansi/tokoh","sentimen":"Positif|Negatif|Netral","alasan":"singkat"}]}';
 
         $userPrompt = "Isu: {$issueTitle}
 Platform: {$platform}
 Penulis: {$authorName} ({$handle})
 Teks: {$content}";
 
-        try {
-            $resp = \Illuminate\Support\Facades\Http::withToken($apiKey)
-                ->timeout(12)
-                ->post('https://api.groq.com/openai/v1/chat/completions', [
-                    'model' => $model,
-                    'temperature' => 0.1,
-                    'max_tokens' => 350,
-                    'response_format' => ['type' => 'json_object'],
-                    'messages' => [
-                        ['role' => 'system', 'content' => $systemPrompt],
-                        ['role' => 'user', 'content' => $userPrompt],
-                    ],
-                ]);
+        foreach ($candidates as $model) {
+            try {
+                $resp = Http::withToken($apiKey)
+                    ->connectTimeout(4)
+                    ->timeout(12)
+                    ->post('https://api.groq.com/openai/v1/chat/completions', [
+                        'model' => $model,
+                        'temperature' => 0.1,
+                        'max_tokens' => 350,
+                        'response_format' => ['type' => 'json_object'],
+                        'messages' => [
+                            ['role' => 'system', 'content' => $systemPrompt],
+                            ['role' => 'user', 'content' => $userPrompt],
+                        ],
+                    ]);
 
-            if ($resp->successful()) {
+                if (! $resp->successful()) {
+                    continue;
+                }
+
                 $rawText = (string) ($resp->json('choices.0.message.content') ?? '');
-                $rawText = preg_replace('/<think>.*?<\/think>/s', '', $rawText);
+                $rawText = preg_replace('/<think>.*?<\/think>/is', '', $rawText);
                 $parsed = json_decode(trim((string) $rawText), true);
 
                 if (is_array($parsed)) {
@@ -721,13 +732,14 @@ Teks: {$content}";
                     if (! empty($parsed['analisis_lembaga']) && is_array($parsed['analisis_lembaga'])) {
                         $payload['ai_institutions'] = $parsed['analisis_lembaga'];
                     }
+
+                    break;
                 }
+            } catch (Throwable) {
+                // Fallback otomatis ke model/heuristik berikutnya jika Groq timeout/error
             }
-        } catch (\Throwable $e) {
-            // Fallback otomatis ke heuristik lokal jika Groq timeout/error
         }
 
         return $payload;
     }
-
 }

@@ -7,7 +7,8 @@ import random
 import hashlib
 import threading
 import urllib.parse
-from datetime import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from itertools import islice
 from collections import Counter
 from typing import List, Literal, Optional
@@ -389,9 +390,81 @@ def jawab_chat_sospem(messages_input: list, prompt_tunggal: str = "") -> str:
     return bersihkan_format_chat(raw)
 
 # ==============================================================================
-# 6. FASTAPI ENDPOINTS (TRIGGER SCRAPE LIVE + CHATBOT OLLAMA COMPATIBLE)
+# 6. BACKGROUND POLLING BRIDGE & FASTAPI ENDPOINTS
 # ==============================================================================
-app = FastAPI(title="SOSPEM On-Demand Worker & AI Server")
+def _bridge_polling_loop() -> None:
+    print(f"[BRIDGE CHAT] Reverse-polling aktif menuju {BASE_URL.rstrip('/')}/api/chat-bridge/pending ...")
+    last_err_at = 0.0
+    while True:
+        try:
+            target = BASE_URL.rstrip("/")
+            if not target:
+                time.sleep(3)
+                continue
+
+            resp = requests.get(f"{target}/api/chat-bridge/pending", headers=HEADERS_LARAVEL, timeout=10)
+            if resp.ok:
+                data = resp.json()
+                task = data.get("task") if isinstance(data, dict) else None
+                if isinstance(task, dict) and task.get("id") and task.get("messages"):
+                    task_id = str(task["id"])
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] [BRIDGE CHAT] Memproses tugas #{task_id[:8]}...")
+                    balasan = jawab_chat_sospem(task["messages"], "")
+                    requests.post(
+                        f"{target}/api/chat-bridge/{task_id}/reply",
+                        json={"reply": balasan, "model": MODEL_ID},
+                        headers=HEADERS_LARAVEL,
+                        timeout=15,
+                    )
+                    continue
+            time.sleep(2)
+        except Exception as e:
+            now_ts = time.time()
+            if now_ts - last_err_at >= 30:
+                print(f"[Info Bridge Chat] Gangguan sementara ({e})")
+                last_err_at = now_ts
+            time.sleep(3)
+
+
+def _scrape_jobs_polling_loop() -> None:
+    print(f"[SCRAPE POLL] Menunggu antrean Scrape Live di {BASE_URL.rstrip('/')}/api/scrape-jobs/pending ...")
+    last_err_at = 0.0
+    while True:
+        try:
+            target = BASE_URL.rstrip("/")
+            if not target or SCRAPE_RUNNING.locked():
+                time.sleep(5)
+                continue
+
+            resp = requests.get(f"{target}/api/scrape-jobs/pending", headers=HEADERS_LARAVEL, timeout=10)
+            job = resp.json().get("job") if resp.ok else None
+            if isinstance(job, dict) and job.get("id"):
+                jalankan_scrape_on_demand(
+                    int(job["id"]),
+                    str(job.get("topic") or "Pemerintahan").strip(),
+                    max(1, min(50, int(job.get("limit") or 10))),
+                    str(job.get("issue_slug") or "auto"),
+                )
+            else:
+                time.sleep(5)
+        except Exception as e:
+            now_ts = time.time()
+            if now_ts - last_err_at >= 30:
+                print(f"[Info Scrape Poll] Gangguan sementara ({e})")
+                last_err_at = now_ts
+            time.sleep(5)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if not getattr(_app.state, "pollers_started", False):
+        threading.Thread(target=_bridge_polling_loop, daemon=True).start()
+        threading.Thread(target=_scrape_jobs_polling_loop, daemon=True).start()
+        _app.state.pollers_started = True
+    yield
+
+
+app = FastAPI(title="SOSPEM On-Demand Worker & AI Server", lifespan=lifespan)
 
 class ScrapeTriggerPayload(BaseModel):
     job_id: Optional[int] = None
@@ -442,7 +515,7 @@ async def ollama_compatible_chat(req: Request):
     balasan = jawab_chat_sospem(body.get("messages") or [], body.get("prompt") or "")
     return {
         "model": body.get("model", "qwen2.5:1.5b"),
-        "created_at": datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "message": {"role": "assistant", "content": balasan},
         "response": balasan,
         "done": True

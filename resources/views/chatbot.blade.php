@@ -10,8 +10,8 @@
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow-card);
         display: flex;
-        height: calc(100vh - 64px);
-        min-height: 580px;
+        height: calc(100vh - 84px);
+        min-height: 560px;
         width: 100%;
         overflow: hidden;
     }

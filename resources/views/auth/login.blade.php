@@ -3,7 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Masuk ke SOSPEM — Sistem Pemantauan Opini Publik &amp; Deteksi Jaringan Bot Media Sosial">
+    <meta name="theme-color" content="#121212">
     <title>Masuk — SOSPEM</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2318b26f'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' fill='%23ffffff' font-family='Inter,Arial,sans-serif' font-weight='700' font-size='18'%3ES%3C/text%3E%3C/svg%3E">
 
     <script>
         (function() {
@@ -35,6 +38,7 @@
             --color-red-bg: rgba(240, 68, 56, 0.14);
             --color-red-border: rgba(240, 68, 56, 0.35);
             --color-red-dark: #f95950;
+            --shadow-login: 0 16px 36px rgba(0, 0, 0, 0.35);
         }
 
         html[data-theme="light"] {
@@ -52,6 +56,7 @@
             --color-red-bg: #fff1f2;
             --color-red-border: #fecdd3;
             --color-red-dark: #be123c;
+            --shadow-login: 0 12px 28px rgba(15, 23, 42, 0.07);
         }
 
         * {
@@ -78,9 +83,29 @@
             border: 1px solid var(--color-border);
             border-radius: 10px;
             padding: 28px;
+            box-shadow: var(--shadow-login);
             display: flex;
             flex-direction: column;
             gap: 20px;
+        }
+
+        .login-theme-btn {
+            position: fixed;
+            top: 18px;
+            right: 20px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--color-border);
+            background: var(--color-surface);
+            color: var(--color-text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .login-theme-btn:hover {
+            color: var(--color-text-primary);
+            border-color: var(--color-border-strong);
         }
 
         .login-brand {
@@ -236,6 +261,7 @@
     </style>
 </head>
 <body>
+    <button type="button" id="loginThemeBtn" class="login-theme-btn" onclick="toggleLoginTheme()">Mode Terang</button>
     <main class="login-card">
         <div class="login-brand">
             <div class="login-logo">S</div>
@@ -255,14 +281,14 @@
             @csrf
 
             <div class="form-group">
-                <label for="email" class="form-label">Email</label>
-                <input type="email" id="email" name="email" class="form-input" value="{{ old('email') }}" placeholder="admin@sospem.id" required autofocus>
+                <label for="email" class="form-label">Username</label>
+                <input type="text" id="email" name="email" class="form-input" value="{{ old('email') }}" placeholder="Admin" autocomplete="username" required autofocus>
             </div>
 
             <div class="form-group">
                 <label for="password" class="form-label">Kata Sandi</label>
                 <div class="password-wrap">
-                    <input type="password" id="password" name="password" class="form-input" style="padding-right: 78px;" placeholder="Masukkan kata sandi" required>
+                    <input type="password" id="password" name="password" class="form-input" style="padding-right: 78px;" placeholder="Masukkan kata sandi" autocomplete="current-password" required>
                     <button type="button" class="toggle-pass-btn" onclick="togglePasswordVisibility(this)">Lihat</button>
                 </div>
             </div>
@@ -276,17 +302,31 @@
 
             <button type="submit" class="btn-submit">Masuk ke Dashboard</button>
         </form>
-
-        <div class="demo-hint-box">
-            <div>
-                <div>Akun Default: <strong style="color: var(--color-text-primary);">admin@sospem.id</strong></div>
-                <div>Sandi: <strong style="color: var(--color-text-primary);">password</strong></div>
-            </div>
-            <button type="button" class="btn-autofill" onclick="fillDefaultCredentials()">Isi Otomatis</button>
-        </div>
     </main>
 
     <script>
+        function syncLoginThemeBtn() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const btn = document.getElementById('loginThemeBtn');
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (btn) {
+                btn.innerText = current === 'dark' ? 'Mode Terang' : 'Mode Malam';
+            }
+            if (meta) {
+                meta.setAttribute('content', current === 'dark' ? '#121212' : '#f8fafc');
+            }
+        }
+
+        function toggleLoginTheme() {
+            const current = document.documentElement.getAttribute('data-theme') || 'dark';
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('sospem_theme', next);
+            syncLoginThemeBtn();
+        }
+
+        syncLoginThemeBtn();
+
         function togglePasswordVisibility(btn) {
             const input = document.getElementById('password');
             if (input.type === 'password') {
@@ -296,11 +336,6 @@
                 input.type = 'password';
                 btn.innerText = 'Lihat';
             }
-        }
-
-        function fillDefaultCredentials() {
-            document.getElementById('email').value = 'admin@sospem.id';
-            document.getElementById('password').value = 'password';
         }
     </script>
 </body>

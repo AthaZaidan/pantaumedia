@@ -23,12 +23,16 @@ Route::get('/api/scrape-jobs/pending', [SospemController::class, 'getPendingJob'
 Route::get('/api/scrape-jobs/{id}', [SospemController::class, 'getJobStatus'])->name('api.scrape-jobs.show');
 Route::get('/api/scrape-jobs/{id}/status', [SospemController::class, 'getJobStatus'])->name('api.scrape-jobs.status');
 Route::post('/api/scrape-jobs/{id}/done', [SospemController::class, 'completeJob'])->name('api.scrape-jobs.done');
+Route::get('/api/jupyter/status', [SospemController::class, 'jupyterStatus'])->name('api.jupyter.status');
+Route::get('/api/chat-bridge/pending', [SospemController::class, 'getPendingChatBridge'])->name('api.chat-bridge.pending');
+Route::post('/api/chat-bridge/{taskId}/reply', [SospemController::class, 'completeChatBridge'])->name('api.chat-bridge.reply');
 
 // Halaman Web Utama (Wajib Login)
 Route::middleware('auth')->group(function (): void {
     Route::get('/', [SospemController::class, 'dashboard'])->name('dashboard');
     Route::get('/feed/{issueSlug}/{platform}', [SospemController::class, 'feed'])->name('feed.platform');
 
+    Route::get('/settings', [SospemController::class, 'settings'])->name('settings');
     Route::get('/issues', [SospemController::class, 'issues'])->name('issues.index');
     Route::post('/issues', [SospemController::class, 'storeIssue'])->name('issues.store');
     Route::post('/issues/sync-json', [SospemController::class, 'syncJsonFile'])->name('issues.sync-json');

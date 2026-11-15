@@ -20,12 +20,12 @@ class SospemDatabaseSeeder extends Seeder
     {
         $analyzer = app(PostAnalyzerService::class);
 
-        // Pastikan akun admin default tersedia untuk login
+        // Pastikan akun admin default tersedia untuk login (Username: Admin, Password: admin)
         User::updateOrCreate(
             ['email' => 'admin@sospem.id'],
             [
-                'name' => 'Admin SOSPEM',
-                'password' => Hash::make('password'),
+                'name' => 'Admin',
+                'password' => Hash::make('admin'),
             ]
         );
 

@@ -162,7 +162,7 @@
     <header class="page-title-bar">
         <h1 class="page-heading">
             <span>Audit Profil &amp; Jaringan Akun</span>
-            <span class="page-heading-muted">&middot; Forensik Heuristik Bot (PostgreSQL)</span>
+            <span class="page-heading-muted">&middot; Forensik Heuristik &amp; Jaringan Bot</span>
         </h1>
         <div class="top-right-actions">
             <a href="{{ route('dashboard') }}" class="btn-clean">&larr; Dashboard</a>
@@ -335,7 +335,7 @@
                 <!-- Riwayat Postingan Akun dari Tabel social_posts PostgreSQL -->
                 <div style="border-top: 1px solid var(--color-border-subtle); padding-top: 16px; display: flex; flex-direction: column; gap: 10px;">
                     <h3 style="font-size: 14px; font-weight: 600;">
-                        Riwayat Postingan Akun Ini di PostgreSQL ({{ $accountPosts->count() }} sampel terbaru)
+                        Riwayat Postingan Akun Ini ({{ $accountPosts->count() }} sampel terbaru)
                     </h3>
 
                     @forelse($accountPosts as $ap)

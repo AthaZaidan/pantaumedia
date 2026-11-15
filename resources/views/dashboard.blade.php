@@ -485,15 +485,12 @@
     <header class="page-title-bar">
         <h1 class="page-heading">
             <span>Opini Publik</span>
-            <span class="page-heading-muted">&middot; 1 Nov s/d 6 Nov 2026</span>
+            <span class="page-heading-muted">&middot; Pemantauan Real-Time &middot; {{ now()->timezone('Asia/Jakarta')->format('d M Y') }}</span>
         </h1>
 
         <div class="top-right-actions">
-            <a href="{{ route('issues.index') }}" class="btn-clean">+ Kelola Isu</a>
             <a href="{{ route('analytics') }}" class="btn-clean">Grafik Detail</a>
-            <a href="{{ route('methodology') }}" class="btn-clean">UU PDP</a>
-            <button type="button" class="btn-clean" onclick="openScrapeModal()" style="background: #2563eb; border-color: #2563eb; color: #ffffff; font-weight: 600;">⚡ + Scrape Live</button>
-            <button type="button" class="btn-clean btn-primary" onclick="simulateIngest()" title="Hanya simulasi dummy stream di browser">+ Simulasi Stream</button>
+            <button type="button" class="btn-clean" onclick="openScrapeModal()" style="border-color: var(--color-teal-border); background: var(--color-teal-bg); color: var(--color-teal-dark); font-weight: 600;">+ Scrape Live</button>
         </div>
     </header>
 
@@ -504,9 +501,9 @@
         <div class="kpi-primary-card">
             <div class="kpi-primary-top">
                 <div>
-                    <div class="kpi-primary-label">Total Sampel Terpantau (PostgreSQL)</div>
+                    <div class="kpi-primary-label">Total Sampel Terpantau</div>
                     <div class="kpi-primary-hero-number tabular" id="kpiTotalSampel">{{ number_format($kpi['total_posts'], 0, ',', '.') }}</div>
-                    <div class="kpi-primary-delta tabular" style="color: var(--color-teal-dark); font-weight: 500;">&#8599; Terhubung langsung ke tabel social_posts</div>
+                    <div class="kpi-primary-delta tabular" style="color: var(--color-teal-dark); font-weight: 500;">&#8599; Sinkronisasi data opini publik &amp; deteksi bot aktif</div>
                 </div>
 
                 <!-- Sparkline Hijau Stockbit dengan Area Fill Halus -->
@@ -726,7 +723,7 @@
             <div class="modal-header">
                 <div>
                     <h3 style="font-size: 15px; font-weight: 600; color: var(--color-text-primary); margin: 0; display: flex; align-items: center; gap: 8px;">
-                        <span style="color: #2563eb;">⚡</span> Perintahkan Scraping Live
+                        Perintahkan Scraping Live
                     </h3>
                     <p style="font-size: 11.5px; color: var(--color-text-secondary); margin: 3px 0 0;">
                         Memerintahkan AI Agent & Scraper di JupyterHub menarik data asli YouTube/RSS.
@@ -762,8 +759,8 @@
 
                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--color-border);">
                     <button type="button" class="btn-clean" onclick="closeScrapeModal()">Tutup</button>
-                    <button type="button" id="btnSubmitScrape" class="btn-clean" onclick="submitScrapeJob()" style="background: #2563eb; border-color: #2563eb; color: #ffffff; font-weight: 600;">
-                        🚀 Mulai Scraping Live
+                    <button type="button" id="btnSubmitScrape" class="btn-clean" onclick="submitScrapeJob()" style="background: var(--color-teal); border-color: var(--color-teal); color: #090b10; font-weight: 600;">
+                        Mulai Scraping Live
                     </button>
                 </div>
             </div>
@@ -797,33 +794,6 @@
 
         document.getElementById('periodSummaryMeta').innerHTML =
             `${data.total.toLocaleString('id-ID')} post (Orang: ${data.human.toLocaleString('id-ID')} &middot; Bot: ${data.bot.toLocaleString('id-ID')})`;
-    }
-
-    async function simulateIngest() {
-        try {
-            const res = await fetch("{{ route('ingest.post') }}", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify({
-                    issue_slug: 'makan-bergizi-gratis',
-                    platform: 'x',
-                    author_name: 'Warga Pemantau (Live)',
-                    author_handle: '@warga_pantau_id',
-                    content: 'Evaluasi lapangan pelaksanaan Makan Bergizi Gratis hari ini berjalan lancar, mohon kualitas distribusi tetap diawasi.'
-                })
-            });
-            const data = await res.json();
-            if (data.status === 'ok' && data.kpi) {
-                applyKpiAndIssuesUpdate(data.kpi, data.issue ? [data.issue] : []);
-                showToast("Tersimpan & dihitung ulang di PostgreSQL (ID #" + data.post.id + ")");
-            }
-        } catch (e) {
-            showToast("Gagal menyimpan stream");
-        }
     }
 
     function applyKpiAndIssuesUpdate(kpi, issuesList) {
@@ -941,7 +911,7 @@
         btn.innerText = 'Menunggu JupyterHub...';
         statusBox.style.display = 'block';
         statusBox.style.borderColor = 'var(--color-border)';
-        statusText.innerHTML = '📡 <strong>Menunggu JupyterHub...</strong>';
+        statusText.innerHTML = '<strong>Menunggu JupyterHub...</strong>';
         statusDetail.innerText = 'Tugas scraping dibuat di database, menunggu listener JupyterHub mengambil tugas.';
 
         try {
@@ -959,7 +929,7 @@
             if (res.ok && data.status === 'ok') {
                 currentScrapeJobId = data.job_id;
                 btn.innerText = 'Menunggu JupyterHub...';
-                statusText.innerHTML = `📡 <strong>Menunggu JupyterHub...</strong>`;
+                statusText.innerHTML = '<strong>Menunggu JupyterHub...</strong>';
                 statusDetail.innerText = `Antrean #${data.job_id} aktif. JupyterHub akan mengecek antrean setiap beberapa detik.`;
                 if (typeof showToast === 'function') {
                     showToast(`Tugas Scrape #${data.job_id} (${topic}) berhasil dibuat.`);
@@ -972,8 +942,8 @@
             }
         } catch (err) {
             btn.disabled = false;
-            btn.innerText = '🚀 Mulai Scraping Live';
-            statusText.innerHTML = '❌ <strong>Gagal membuat tugas:</strong> ' + err.message;
+            btn.innerText = 'Mulai Scraping Live';
+            statusText.innerHTML = '<strong>Gagal membuat tugas:</strong> ' + err.message;
             statusDetail.innerText = 'Pastikan server web Laravel aktif.';
         }
     }
@@ -1010,13 +980,13 @@
                     btn.disabled = true;
                     btn.innerText = 'Menunggu JupyterHub...';
                     statusBox.style.borderColor = 'var(--color-border)';
-                    statusText.innerHTML = '📡 <strong>Menunggu JupyterHub...</strong>';
+                    statusText.innerHTML = '<strong>Menunggu JupyterHub...</strong>';
                     statusDetail.innerText = 'JupyterHub sedang memeriksa antrean, scraping akan segera dimulai...';
                 } else if (status === 'running') {
                     btn.disabled = true;
                     btn.innerText = 'JupyterHub sedang menarik & menganalisis data...';
                     statusBox.style.borderColor = '#2563eb';
-                    statusText.innerHTML = '⚙️ <strong>JupyterHub sedang menarik & menganalisis data...</strong>';
+                    statusText.innerHTML = '<strong>JupyterHub sedang menarik & menganalisis data...</strong>';
                     statusDetail.innerText = `Menarik hingga ${job.limit || 10} postingan YouTube/RSS dan menjalankan analisis sentimen & bot AI Qwen.`;
                 } else if (status === 'completed') {
                     clearInterval(scrapePollInterval);
@@ -1024,7 +994,7 @@
                     btn.disabled = false;
                     btn.innerText = `Selesai! ${count} data masuk`;
                     statusBox.style.borderColor = 'var(--color-teal)';
-                    statusText.innerHTML = `🎉 <strong>Selesai! ${count} data masuk</strong>`;
+                    statusText.innerHTML = `<strong>Selesai! ${count} data masuk</strong>`;
                     statusDetail.innerText = 'Data berhasil disimpan ke database. Menutup modal & memperbarui dashboard...';
                     if (typeof showToast === 'function') {
                         showToast(`Selesai! ${count} data berhasil masuk.`);
@@ -1041,7 +1011,7 @@
                     btn.disabled = false;
                     btn.innerText = 'Ulangi Scrape';
                     statusBox.style.borderColor = '#dc2626';
-                    statusText.innerHTML = '❌ <strong>Proses di JupyterHub Gagal</strong>';
+                    statusText.innerHTML = '<strong>Proses di JupyterHub Gagal</strong>';
                     statusDetail.innerText = 'Periksa log JupyterHub untuk melihat kendala jaringan atau batas kuota.';
                 }
 
@@ -1050,7 +1020,7 @@
                     scrapePollInterval = null;
                     btn.disabled = false;
                     btn.innerText = 'Muat Ulang Halaman';
-                    statusText.innerHTML = '⏱️ <strong>Batas waktu pemantauan tercapai</strong>';
+                    statusText.innerHTML = '<strong>Batas waktu pemantauan tercapai</strong>';
                     statusDetail.innerText = 'Proses mungkin masih berlangsung di background JupyterHub. Silakan klik muat ulang setelah beberapa saat.';
                     btn.onclick = () => location.reload();
                 }

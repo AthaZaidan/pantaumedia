@@ -20,14 +20,7 @@ class AuthController extends Controller
             return redirect()->route('dashboard');
         }
 
-        // Pastikan akun admin default tersedia jika tabel users masih kosong
-        if (User::count() === 0) {
-            User::create([
-                'name' => 'Admin SOSPEM',
-                'email' => 'admin@sospem.id',
-                'password' => Hash::make('password'),
-            ]);
-        }
+        $this->ensureDefaultAdminExists();
 
         return view('auth.login');
     }
@@ -37,25 +30,31 @@ class AuthController extends Controller
      */
     public function login(Request $request): RedirectResponse
     {
+        $this->ensureDefaultAdminExists();
+
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'email' => ['required', 'string'],
             'password' => ['required', 'string'],
         ], [
-            'email.required' => 'Alamat email wajib diisi.',
-            'email.email' => 'Format alamat email tidak valid.',
+            'email.required' => 'Username wajib diisi.',
             'password.required' => 'Kata sandi wajib diisi.',
         ]);
 
+        $loginIdentifier = trim((string) $credentials['email']);
         $remember = $request->boolean('remember');
 
-        if (Auth::attempt($credentials, $remember)) {
+        $user = User::whereRaw('LOWER(email) = ?', [strtolower($loginIdentifier)])
+            ->orWhereRaw('LOWER(name) = ?', [strtolower($loginIdentifier)])
+            ->first();
+
+        if ($user !== null && Auth::attempt(['email' => $user->email, 'password' => $credentials['password']], $remember)) {
             $request->session()->regenerate();
 
             return redirect()->intended(route('dashboard'));
         }
 
         return back()
-            ->withErrors(['email' => 'Email atau kata sandi yang Anda masukkan tidak sesuai.'])
+            ->withErrors(['email' => 'Username atau kata sandi yang Anda masukkan tidak sesuai.'])
             ->withInput($request->only('email'));
     }
 
@@ -70,5 +69,39 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()->route('login');
+    }
+
+    /**
+     * Pastikan akun admin awal tersedia ketika tabel users masih kosong
+     * dan selaraskan akun default lama (Admin SOSPEM) ke kredensial Admin.
+     */
+    private function ensureDefaultAdminExists(): void
+    {
+        $adminEmail = (string) env('ADMIN_EMAIL', 'admin@sospem.id');
+        $adminName = (string) env('ADMIN_NAME', 'Admin');
+        $adminPassword = (string) env('ADMIN_PASSWORD', 'admin');
+
+        $legacyAdmin = User::where('email', $adminEmail)
+            ->where('name', 'Admin SOSPEM')
+            ->first();
+
+        if ($legacyAdmin !== null) {
+            $legacyAdmin->update([
+                'name' => $adminName,
+                'password' => Hash::make($adminPassword),
+            ]);
+
+            return;
+        }
+
+        if (User::count() > 0) {
+            return;
+        }
+
+        User::create([
+            'name' => $adminName,
+            'email' => $adminEmail,
+            'password' => Hash::make($adminPassword),
+        ]);
     }
 }

@@ -155,7 +155,7 @@
     <header class="page-title-bar">
         <h1 class="page-heading">
             <span>Grafik Analitik &amp; Monitoring Forensik</span>
-            <span class="page-heading-muted tabular">&middot; {{ number_format($chartData['total_analyzed'], 0, ',', '.') }} Postingan PostgreSQL</span>
+            <span class="page-heading-muted tabular">&middot; {{ number_format($chartData['total_analyzed'], 0, ',', '.') }} Sampel Postingan Teranalisis</span>
         </h1>
         <div class="top-right-actions">
             <form action="{{ route('analytics') }}" method="GET" style="display: flex; align-items: center; gap: 8px;">
