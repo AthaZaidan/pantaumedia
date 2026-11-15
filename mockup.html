@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOSPEM — Pemantauan Opini Publik & Jaringan Bot (Mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+/* ===================================================================
+   DESIGN TOKENS — Dark / Light
+   =================================================================== */
+:root, html[data-theme="dark"] {
+    --color-canvas: #121212;
+    --color-surface: #181818;
+    --color-surface-subtle: #1f1f1f;
+    --color-surface-hover: #252525;
+    --color-surface-pill: #2a2a2a;
+    --color-border: #2b2b2b;
+    --color-border-subtle: #222222;
+    --color-border-strong: #3d3d3d;
+    --color-text-primary: #f5f5f5;
+    --color-text-secondary: #9e9e9e;
+    --color-text-muted: #6e6e6e;
+    --color-teal: #18b26f;
+    --color-teal-dark: #21ce83;
+    --color-teal-bg: rgba(24,178,111,0.15);
+    --color-teal-border: rgba(24,178,111,0.35);
+    --color-red: #f04438;
+    --color-red-dark: #f95950;
+    --color-red-bg: rgba(240,68,56,0.15);
+    --color-red-border: rgba(240,68,56,0.35);
+    --color-slate-bar: #2a2a2a;
+    --color-slate-dark: #525252;
+    --radius-xs: 4px; --radius-sm: 5px; --radius-md: 6px; --radius-lg: 8px;
+    --shadow-card: none;
+    --shadow-modal: 0 20px 40px rgba(0,0,0,0.75);
+}
+html[data-theme="light"] {
+    --color-canvas: #f8fafc;
+    --color-surface: #ffffff;
+    --color-surface-subtle: #f8fafc;
+    --color-surface-hover: #f1f5f9;
+    --color-surface-pill: #f1f5f9;
+    --color-border: #e2e8f0;
+    --color-border-subtle: #f1f5f9;
+    --color-border-strong: #cbd5e1;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #64748b;
+    --color-text-muted: #94a3b8;
+    --color-teal: #10b981;
+    --color-teal-dark: #059669;
+    --color-teal-bg: #ecfdf5;
+    --color-teal-border: #a7f3d0;
+    --color-red: #e11d48;
+    --color-red-dark: #be123c;
+    --color-red-bg: #fff1f2;
+    --color-red-border: #fecdd3;
+    --color-slate-bar: #cbd5e1;
+    --color-slate-dark: #334155;
+    --radius-xs: 4px; --radius-sm: 6px; --radius-md: 10px; --radius-lg: 12px;
+    --shadow-card: 0 1px 2px rgba(15,23,42,0.03);
+    --shadow-modal: 0 20px 36px -8px rgba(15,23,42,0.14);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+body { background: var(--color-canvas); color: var(--color-text-primary); line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+
+.tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+a { text-decoration: none; color: inherit; }
+button { cursor: pointer; border: none; background: none; }
+
+/* ===================================================================
+   APP SHELL
+   =================================================================== */
+.app-shell { display: flex; min-height: 100vh; }
+
+/* ===================================================================
+   LEFT SIDEBAR
+   =================================================================== */
+.left-sidebar {
+    width: 240px; border-right: 1px solid var(--color-border);
+    background: var(--color-surface); display: flex; flex-direction: column;
+    padding: 16px 12px; position: sticky; top: 0; height: 100vh;
+    flex-shrink: 0; z-index: 50; transition: width 0.2s cubic-bezier(.4,0,.2,1), padding 0.2s;
+    overflow-x: hidden;
+}
+.left-sidebar.is-minimized { width: 64px; padding: 16px 10px; }
+.sidebar-top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; min-height: 38px; }
+.left-sidebar.is-minimized .sidebar-top-row { justify-content: center; }
+.brand-link { display: flex; align-items: center; gap: 10px; color: var(--color-text-primary); }
+.left-sidebar.is-minimized .brand-link { display: none; }
+.brand-logo-box { width: 34px; height: 34px; border-radius: 8px; background: var(--color-surface-pill); border: 1px solid var(--color-border); color: var(--color-text-primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-weight: 700; font-size: 13px; }
+.brand-text-wrap { display: flex; flex-direction: column; white-space: nowrap; overflow: hidden; }
+.brand-title { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.2; }
+.brand-sub { font-size: 11px; color: var(--color-text-muted); }
+.toggle-sidebar-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface-subtle); color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background 0.15s, color 0.15s; }
+.toggle-sidebar-btn:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.sidebar-nav { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.side-nav-link { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 11px; border-radius: 8px; border: 1px solid transparent; color: var(--color-text-secondary); font-size: 13px; font-weight: 500; white-space: nowrap; transition: all 0.15s; cursor: pointer; }
+.side-nav-link:hover { color: var(--color-text-primary); background: var(--color-surface-subtle); }
+.side-nav-link.is-active { color: var(--color-teal-dark); background: rgba(24,178,111,0.1); border-color: rgba(24,178,111,0.25); font-weight: 600; }
+.side-nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.side-nav-label { opacity: 1; transition: opacity 0.15s; }
+.left-sidebar.is-minimized .side-nav-link { justify-content: center; padding: 0; }
+.left-sidebar.is-minimized .side-nav-label { display: none; }
+.sidebar-bottom { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); display: flex; flex-direction: column; width: 100%; gap: 4px; }
+.user-info-row { display: flex; align-items: center; gap: 10px; padding: 8px 11px; border-radius: 8px; color: var(--color-text-secondary); font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.left-sidebar.is-minimized .user-info-row span { display: none; }
+.user-avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--color-surface-pill); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; color: var(--color-text-secondary); }
+
+/* ===================================================================
+   MAIN CONTENT
+   =================================================================== */
+.main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main-scroll { flex: 1; overflow-y: auto; padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
+
+/* Page Title */
+.page-title-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 4px; }
+.page-heading { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.page-heading-muted { font-weight: 400; color: var(--color-text-secondary); font-size: 16px; }
+.top-right-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-clean { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn-clean:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.btn-primary { background: var(--color-teal); border-color: var(--color-teal); color: #fff; font-weight: 600; }
+.btn-primary:hover { opacity: 0.88; }
+.btn-blue { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+.btn-blue:hover { opacity: 0.88; }
+
+/* ===================================================================
+   KPI BENTO GRID
+   =================================================================== */
+.kpi-bento-grid { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,1fr); gap: 14px; }
+.kpi-primary-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 26px 28px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; justify-content: space-between; gap: 22px; }
+.kpi-primary-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.kpi-primary-label { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 6px; }
+.kpi-primary-hero-number { font-size: 42px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.03em; line-height: 1.05; }
+.kpi-primary-delta { font-size: 13px; color: var(--color-teal-dark); font-weight: 500; margin-top: 10px; }
+.kpi-primary-divider { height: 1px; background: var(--color-border); width: 100%; }
+.kpi-primary-split { display: flex; align-items: center; gap: 48px; flex-wrap: wrap; }
+.kpi-split-item { display: flex; flex-direction: column; gap: 4px; }
+.kpi-split-label { font-size: 12.5px; font-weight: 500; color: var(--color-text-secondary); }
+.kpi-split-val { font-size: 20px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.015em; }
+.kpi-secondary-stack { display: flex; flex-direction: column; gap: 12px; }
+.kpi-compact-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px 20px; box-shadow: var(--shadow-card); display: flex; align-items: center; justify-content: space-between; gap: 16px; flex: 1; }
+.kpi-compact-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kpi-compact-label { font-size: 12.5px; font-weight: 500; color: var(--color-text-secondary); }
+.kpi-compact-val { font-size: 22px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.02em; line-height: 1.2; }
+.kpi-compact-delta { font-size: 13px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+
+/* ===================================================================
+   DAILY CHART CARD
+   =================================================================== */
+.daily-chart-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 20px 24px; box-shadow: var(--shadow-card); display: flex; flex-direction: column; gap: 12px; }
+.daily-chart-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.daily-chart-title { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
+.period-tabs { display: flex; align-items: center; gap: 4px; }
+.period-tab { padding: 5px 12px; border-radius: var(--radius-sm); border: 1px solid transparent; background: transparent; color: var(--color-text-muted); font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.period-tab:hover { color: var(--color-text-secondary); background: var(--color-surface-subtle); }
+.period-tab.is-active { background: var(--color-surface-pill); border-color: var(--color-border-strong); color: var(--color-text-primary); font-weight: 600; }
+.daily-svg-wrap { width: 100%; overflow: hidden; }
+.daily-axis-labels { display: flex; justify-content: space-between; padding: 0 2px; }
+.daily-axis-labels span { font-size: 11px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ===================================================================
+   ISSUES TABLE
+   =================================================================== */
+.issues-table-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+.issues-card-topbar { padding: 16px 20px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.issues-card-title { font-size: 14px; font-weight: 700; color: var(--color-text-primary); }
+.search-clean-wrap { position: relative; display: flex; align-items: center; }
+.search-clean-icon { position: absolute; left: 10px; color: var(--color-text-muted); pointer-events: none; }
+.search-clean-input { padding: 7px 12px 7px 32px; font-size: 12.5px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); color: var(--color-text-primary); outline: none; width: 200px; }
+.search-clean-input:focus { border-color: var(--color-teal); background: var(--color-surface); }
+
+.issue-item { border-bottom: 1px solid var(--color-border-subtle); }
+.issue-item:last-child { border-bottom: none; }
+.issue-row-header { display: flex; align-items: center; gap: 14px; padding: 14px 20px; cursor: pointer; transition: background 0.12s; }
+.issue-row-header:hover { background: var(--color-surface-subtle); }
+.issue-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--color-surface-pill); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); flex-shrink: 0; }
+.issue-item.is-lead .issue-avatar { background: var(--color-teal-bg); border-color: var(--color-teal-border); color: var(--color-teal-dark); }
+.issue-primary { flex: 1; min-width: 0; }
+.issue-name { font-size: 13.5px; font-weight: 600; color: var(--color-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-group-box { display: flex; flex-direction: column; gap: 4px; min-width: 130px; }
+.bar-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--color-text-muted); }
+.bar-track { height: 5px; border-radius: 999px; background: var(--color-slate-bar); overflow: hidden; display: flex; }
+.bar-fill-teal { height: 100%; background: var(--color-teal); border-radius: 999px 0 0 999px; }
+.bar-fill-slate { height: 100%; background: var(--color-slate-dark); border-radius: 0 999px 999px 0; }
+.total-posts-col { font-weight: 600; font-size: 13.5px; text-align: right; min-width: 80px; white-space: nowrap; }
+.status-pill { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.status-pill.is-up { background: var(--color-teal-bg); border: 1px solid var(--color-teal-border); color: var(--color-teal-dark); }
+.status-pill.is-down { background: var(--color-red-bg); border: 1px solid var(--color-red-border); color: var(--color-red-dark); }
+.status-pill.is-stable { background: var(--color-surface-pill); border: 1px solid var(--color-border); color: var(--color-text-muted); }
+
+/* Issue Expansion Panel */
+.issue-expansion-panel { display: none; padding: 0 20px 16px; }
+.issue-item.is-expanded .issue-expansion-panel { display: block; }
+.platform-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.platform-card-link { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); transition: all 0.15s; cursor: pointer; }
+.platform-card-link:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+.platform-header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.segment-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.segment-label { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--color-text-secondary); }
+.segment-metric { font-size: 12px; font-variant-numeric: tabular-nums; display: flex; gap: 3px; }
+.dot-teal { width: 7px; height: 7px; border-radius: 50%; background: var(--color-teal); }
+.dot-slate { width: 7px; height: 7px; border-radius: 50%; background: var(--color-slate-dark); }
+.platform-cta-hint { font-size: 11px; color: var(--color-text-muted); text-align: right; padding-top: 4px; border-top: 1px solid var(--color-border-subtle); margin-top: 2px; }
+
+/* ===================================================================
+   PAGES (shown/hidden via JS)
+   =================================================================== */
+.page { display: none; }
+.page.is-active { display: flex; flex-direction: column; }
+
+/* ===================================================================
+   ANALYTICS PAGE
+   =================================================================== */
+.analytics-kpi-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; }
+.analytic-kpi-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; }
+.analytic-kpi-label { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); }
+.analytic-kpi-val { font-size: 24px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.02em; }
+.analytic-kpi-meta { font-size: 12px; color: var(--color-text-secondary); display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.charts-grid-2col { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.chart-box-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+.chart-box-title { font-size: 14px; font-weight: 600; color: var(--color-text-primary); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.monitor-table-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+.monitor-table-head { padding: 15px 20px; border-bottom: 1px solid var(--color-border); font-size: 13.5px; font-weight: 600; color: var(--color-text-primary); display: flex; align-items: center; justify-content: space-between; }
+.monitor-row { padding: 12px 20px; border-bottom: 1px solid var(--color-border-subtle); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.monitor-row:last-child { border-bottom: none; }
+.monitor-row:hover { background: var(--color-surface-subtle); }
+.mini-bar-track { width: 90px; height: 5px; border-radius: 999px; background: var(--color-slate-bar); overflow: hidden; }
+.mini-bar-fill { height: 100%; background: var(--color-teal); border-radius: 999px; }
+
+/* ===================================================================
+   FEED PAGE (Split Screen)
+   =================================================================== */
+.feed-context-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+.feed-context-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.breadcrumb-back { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 4px; cursor: pointer; }
+.breadcrumb-back:hover { color: var(--color-text-primary); }
+.feed-context-title { font-size: 18px; font-weight: 700; color: var(--color-text-primary); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.feed-toolbar-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--color-border-subtle); }
+.platform-switch-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plat-pill { font-size: 12px; font-weight: 500; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-secondary); cursor: pointer; transition: all 0.15s; }
+.plat-pill:hover { background: var(--color-surface-subtle); color: var(--color-text-primary); }
+.plat-pill.is-active { background: var(--color-surface-pill); color: var(--color-text-primary); border-color: var(--color-border-strong); font-weight: 600; }
+.split-feed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.split-column-box { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; height: calc(100vh - 280px); min-height: 500px; overflow: hidden; }
+.split-col-header { padding: 14px 20px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.split-col-title { font-size: 13.5px; font-weight: 700; color: var(--color-text-primary); display: flex; align-items: center; gap: 8px; }
+.split-col-scroll { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; background: var(--color-surface-subtle); }
+.post-item-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.post-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.post-author-info { display: flex; align-items: center; gap: 10px; }
+.post-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--color-surface-pill); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); flex-shrink: 0; }
+.post-author-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+.post-author-handle { font-size: 11.5px; color: var(--color-text-muted); }
+.post-time { font-size: 11px; color: var(--color-text-muted); white-space: nowrap; }
+.post-body { font-size: 13px; line-height: 1.55; color: var(--color-text-primary); }
+.post-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.post-stat { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--color-text-muted); }
+.post-badge-bot { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 600; background: var(--color-red-bg); border: 1px solid var(--color-red-border); color: var(--color-red-dark); }
+.post-badge-human { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 600; background: var(--color-teal-bg); border: 1px solid var(--color-teal-border); color: var(--color-teal-dark); }
+.sent-pill-pos { background: var(--color-teal-bg); border: 1px solid var(--color-teal-border); color: var(--color-teal-dark); font-size: 10.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.sent-pill-neg { background: var(--color-red-bg); border: 1px solid var(--color-red-border); color: var(--color-red-dark); font-size: 10.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+.sent-pill-neu { background: var(--color-surface-pill); border: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 10.5px; font-weight: 600; padding: 2px 6px; border-radius: 4px; }
+
+/* ===================================================================
+   CHATBOT PAGE
+   =================================================================== */
+.chatbot-shell { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; height: calc(100vh - 64px); min-height: 580px; overflow: hidden; }
+.chat-history-sidebar { width: 260px; flex-shrink: 0; border-right: 1px solid var(--color-border); background: var(--color-surface); display: flex; flex-direction: column; padding: 14px 12px; gap: 12px; }
+.new-chat-btn { width: 100%; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--color-teal-border); background: var(--color-teal-bg); color: var(--color-teal-dark); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: all 0.15s; }
+.new-chat-btn:hover { background: var(--color-teal); border-color: var(--color-teal); color: #fff; }
+.chat-history-heading { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-muted); padding: 4px 6px 0; }
+.chat-history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.chat-history-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid transparent; color: var(--color-text-secondary); font-size: 12.5px; cursor: pointer; transition: all 0.12s; }
+.chat-history-item:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.chat-history-item.is-active { background: var(--color-surface-subtle); border-color: var(--color-border); color: var(--color-text-primary); font-weight: 600; }
+.chat-history-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-main-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--color-canvas); }
+.chat-empty-state { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.chat-empty-title { font-size: 36px; font-weight: 600; letter-spacing: -0.02em; color: var(--color-text-primary); }
+.chat-messages-scroll { flex: 1; overflow-y: auto; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--color-canvas); }
+.chat-bubble-row { display: flex; flex-direction: column; gap: 4px; max-width: 82%; }
+.chat-bubble-row.is-user { align-self: flex-end; align-items: flex-end; }
+.chat-bubble-row.is-assistant { align-self: flex-start; align-items: flex-start; }
+.chat-sender-meta { font-size: 11.5px; color: var(--color-text-muted); display: flex; align-items: center; gap: 8px; }
+.chat-bubble-box { padding: 12px 16px; border-radius: var(--radius-md); font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.chat-bubble-row.is-user .chat-bubble-box { background: var(--color-teal); color: #fff; border: 1px solid var(--color-teal); }
+.chat-bubble-row.is-assistant .chat-bubble-box { background: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border); }
+.chat-input-bar { padding: 14px 20px; border-top: 1px solid var(--color-border); background: var(--color-surface); display: flex; gap: 10px; align-items: flex-end; }
+.chat-textarea { flex: 1; padding: 10px 14px; font-size: 13px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); color: var(--color-text-primary); resize: none; min-height: 44px; max-height: 120px; line-height: 1.45; outline: none; font-family: inherit; }
+.chat-textarea:focus { border-color: var(--color-teal); background: var(--color-surface); }
+
+/* ===================================================================
+   ACCOUNTS PAGE
+   =================================================================== */
+.accounts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 14px; }
+.account-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.account-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.account-platform-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-twitter { background: rgba(29,161,242,0.15); border: 1px solid rgba(29,161,242,0.35); color: #1da1f2; }
+.badge-instagram { background: rgba(225,48,108,0.15); border: 1px solid rgba(225,48,108,0.35); color: #e1306c; }
+.badge-facebook { background: rgba(66,103,178,0.15); border: 1px solid rgba(66,103,178,0.35); color: #4267b2; }
+.badge-tiktok { background: rgba(105,201,208,0.15); border: 1px solid rgba(105,201,208,0.35); color: #69c9d0; }
+.account-name { font-size: 14px; font-weight: 700; color: var(--color-text-primary); }
+.account-handle { font-size: 12px; color: var(--color-text-muted); }
+.account-stats { display: flex; gap: 20px; padding-top: 8px; border-top: 1px solid var(--color-border-subtle); }
+.account-stat { display: flex; flex-direction: column; gap: 2px; }
+.account-stat-val { font-size: 16px; font-weight: 700; color: var(--color-text-primary); }
+.account-stat-label { font-size: 11px; color: var(--color-text-muted); }
+.account-delete-btn { width: 28px; height: 28px; border-radius: var(--radius-xs); border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; font-size: 14px; }
+.account-delete-btn:hover { background: var(--color-red-bg); border-color: var(--color-red-border); color: var(--color-red-dark); }
+
+/* ===================================================================
+   ISSUES MANAGEMENT PAGE
+   =================================================================== */
+.issues-mgmt-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; }
+.issues-mgmt-topbar { padding: 16px 20px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.issues-mgmt-row { padding: 14px 20px; border-bottom: 1px solid var(--color-border-subtle); display: flex; align-items: center; gap: 14px; }
+.issues-mgmt-row:last-child { border-bottom: none; }
+.issues-mgmt-row:hover { background: var(--color-surface-subtle); }
+.issues-mgmt-rank { width: 28px; height: 28px; border-radius: 50%; background: var(--color-surface-pill); border: 1px solid var(--color-border); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); flex-shrink: 0; }
+.issues-mgmt-title { flex: 1; font-size: 13.5px; font-weight: 600; color: var(--color-text-primary); }
+.issues-mgmt-keywords { font-size: 11.5px; color: var(--color-text-muted); }
+.trend-select { padding: 5px 10px; font-size: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); color: var(--color-text-primary); cursor: pointer; }
+
+/* ===================================================================
+   METHODOLOGY PAGE
+   =================================================================== */
+.methodology-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 28px 32px; max-width: 820px; }
+.methodology-card h2 { font-size: 18px; font-weight: 700; color: var(--color-text-primary); margin-bottom: 10px; letter-spacing: -0.01em; }
+.methodology-card p { font-size: 13.5px; line-height: 1.65; color: var(--color-text-secondary); margin-bottom: 16px; }
+.methodology-card ul { list-style: none; display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.methodology-card ul li { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--color-text-secondary); line-height: 1.55; }
+.methodology-card ul li::before { content: '→'; color: var(--color-teal-dark); flex-shrink: 0; }
+.meth-section { border-top: 1px solid var(--color-border); padding-top: 20px; margin-top: 20px; }
+
+/* ===================================================================
+   MODAL — SCRAPE LIVE
+   =================================================================== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); z-index: 1200; display: none; align-items: center; justify-content: center; padding: 16px; }
+.modal-overlay.is-active { display: flex; }
+.modal-box { background: var(--color-surface); border-radius: var(--radius-lg); border: 1px solid var(--color-border); width: 100%; max-width: 520px; box-shadow: var(--shadow-modal); display: flex; flex-direction: column; overflow: hidden; }
+.modal-header { padding: 16px 20px; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
+.modal-title { font-size: 15px; font-weight: 700; color: var(--color-text-primary); }
+.modal-close { width: 28px; height: 28px; border-radius: var(--radius-xs); border: 1px solid var(--color-border); background: transparent; color: var(--color-text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; }
+.modal-close:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12.5px; font-weight: 600; color: var(--color-text-secondary); }
+.form-input, .form-select { padding: 9px 12px; font-size: 13px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-subtle); color: var(--color-text-primary); outline: none; width: 100%; font-family: inherit; }
+.form-input:focus, .form-select:focus { border-color: var(--color-teal); background: var(--color-surface); }
+.modal-footer { padding: 14px 20px; border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ===================================================================
+   THEME TOGGLE
+   =================================================================== */
+.theme-toggle-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--color-border); background: var(--color-surface-subtle); color: var(--color-text-secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; font-size: 16px; }
+.theme-toggle-btn:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
+
+/* ===================================================================
+   NOTIFICATION TOAST
+   =================================================================== */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 12px 18px; font-size: 13px; color: var(--color-text-primary); box-shadow: var(--shadow-modal); z-index: 2000; display: none; align-items: center; gap: 10px; max-width: 320px; }
+.toast.is-active { display: flex; }
+.toast-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-teal); flex-shrink: 0; }
+.toast-dot.is-error { background: var(--color-red); }
+
+/* ===================================================================
+   RESPONSIVE
+   =================================================================== */
+@media (max-width: 1024px) {
+    .analytics-kpi-strip { grid-template-columns: repeat(2,1fr); }
+    .charts-grid-2col { grid-template-columns: 1fr; }
+    .bar-group-box { display: none; }
+}
+@media (max-width: 760px) {
+    .kpi-bento-grid { grid-template-columns: 1fr; }
+    .split-feed-grid { grid-template-columns: 1fr; }
+    .main-scroll { padding: 16px; }
+    .left-sidebar { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     APP SHELL
+     ================================================================ -->
+<div class="app-shell">
+
+    <!-- LEFT SIDEBAR -->
+    <aside class="left-sidebar" id="leftSidebar">
+        <div class="sidebar-top-row">
+            <a class="brand-link" onclick="navigateTo('dashboard')" style="cursor:pointer">
+                <div class="brand-logo-box">PM</div>
+                <div class="brand-text-wrap">
+                    <span class="brand-title">SOSPEM</span>
+                    <span class="brand-sub">Pantau Media</span>
+                </div>
+            </a>
+            <button class="toggle-sidebar-btn" onclick="toggleSidebar()" title="Toggle Sidebar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="side-nav-link is-active" id="nav-dashboard" onclick="navigateTo('dashboard')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span class="side-nav-label">Dashboard</span>
+            </a>
+            <a class="side-nav-link" id="nav-analytics" onclick="navigateTo('analytics')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <span class="side-nav-label">Grafik Analitik</span>
+            </a>
+            <a class="side-nav-link" id="nav-feed" onclick="navigateTo('feed')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span class="side-nav-label">Split Feed</span>
+            </a>
+            <a class="side-nav-link" id="nav-issues" onclick="navigateTo('issues')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span class="side-nav-label">Kelola Isu</span>
+            </a>
+            <a class="side-nav-link" id="nav-accounts" onclick="navigateTo('accounts')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span class="side-nav-label">Akun Terpantau</span>
+            </a>
+            <a class="side-nav-link" id="nav-chatbot" onclick="navigateTo('chatbot')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                <span class="side-nav-label">Chatbot AI</span>
+            </a>
+            <a class="side-nav-link" id="nav-methodology" onclick="navigateTo('methodology')">
+                <svg class="side-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span class="side-nav-label">UU PDP</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <button class="theme-toggle-btn" onclick="toggleTheme()" id="themeBtn" title="Toggle tema">🌙</button>
+            <div class="user-info-row">
+                <div class="user-avatar">A</div>
+                <span>admin@sospem.id</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+
+        <!-- ===========================================================
+             PAGE: DASHBOARD
+             =========================================================== -->
+        <div class="page is-active" id="page-dashboard">
+            <div class="main-scroll">
+                <!-- Page Title -->
+                <header class="page-title-bar">
+                    <h1 class="page-heading">
+                        <span>Opini Publik</span>
+                        <span class="page-heading-muted">· 1 Nov s/d 6 Nov 2026</span>
+                    </h1>
+                    <div class="top-right-actions">
+                        <button class="btn-clean" onclick="navigateTo('issues')">+ Kelola Isu</button>
+                        <button class="btn-clean" onclick="navigateTo('analytics')">Grafik Detail</button>
+                        <button class="btn-clean" onclick="navigateTo('methodology')">UU PDP</button>
+                        <button class="btn-clean btn-blue" onclick="openScrapeModal()">⚡ + Scrape Live</button>
+                        <button class="btn-clean btn-primary" onclick="simulateStream()">+ Simulasi Stream</button>
+                    </div>
+                </header>
+
+                <!-- KPI BENTO GRID -->
+                <section class="kpi-bento-grid">
+                    <!-- Primary Card -->
+                    <div class="kpi-primary-card">
+                        <div class="kpi-primary-top">
+                            <div>
+                                <div class="kpi-primary-label">Total Sampel Terpantau (PostgreSQL)</div>
+                                <div class="kpi-primary-hero-number tabular" id="kpiTotalSampel">247.831</div>
+                                <div class="kpi-primary-delta">↗ Terhubung langsung ke tabel social_posts</div>
+                            </div>
+                            <div style="padding-top:10px; flex-shrink:0;">
+                                <svg width="165" height="56" viewBox="0 0 165 56" fill="none">
+                                    <defs>
+                                        <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stop-color="#18b26f" stop-opacity="0.28"/>
+                                            <stop offset="100%" stop-color="#18b26f" stop-opacity="0"/>
+                                        </linearGradient>
+                                    </defs>
+                                    <path d="M4 44 C18 38,22 46,36 36 C48 26,54 37,68 28 C80 20,88 31,102 20 C116 10,124 22,138 14 C146 9,152 12,158 6 L158 54 L4 54 Z" fill="url(#sparkGrad)"/>
+                                    <path d="M4 44 C18 38,22 46,36 36 C48 26,54 37,68 28 C80 20,88 31,102 20 C116 10,124 22,138 14 C146 9,152 12,158 6" stroke="#21ce83" stroke-width="2" stroke-linecap="round" fill="none"/>
+                                    <circle cx="158" cy="6" r="3.5" fill="#21ce83"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="kpi-primary-divider"></div>
+                        <div class="kpi-primary-split">
+                            <div class="kpi-split-item">
+                                <div class="kpi-split-label">Warga Organik</div>
+                                <div class="kpi-split-val tabular">182.419</div>
+                            </div>
+                            <div class="kpi-split-item">
+                                <div class="kpi-split-label">Jaringan Bot</div>
+                                <div class="kpi-split-val tabular">65.412</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3 Stack Kanan -->
+                    <div class="kpi-secondary-stack">
+                        <div class="kpi-compact-card">
+                            <div class="kpi-compact-left">
+                                <span class="kpi-compact-label">Warga aktif organik</span>
+                                <span class="kpi-compact-val tabular">73,6%</span>
+                            </div>
+                            <div class="kpi-compact-delta tabular" style="color:var(--color-teal-dark)">↗ Organik</div>
+                        </div>
+                        <div class="kpi-compact-card">
+                            <div class="kpi-compact-left">
+                                <span class="kpi-compact-label">Anomali botnet</span>
+                                <span class="kpi-compact-val tabular">26,4%</span>
+                            </div>
+                            <div class="kpi-compact-delta tabular" style="color:var(--color-red-dark)">↘ Botnet</div>
+                        </div>
+                        <div class="kpi-compact-card">
+                            <div class="kpi-compact-left">
+                                <span class="kpi-compact-label">Isu tertinggi (#1)</span>
+                                <span class="kpi-compact-val" style="font-size:18px;">Pemilu 2026</span>
+                            </div>
+                            <div class="kpi-compact-delta tabular" style="color:var(--color-teal-dark); font-weight:600;">38,2% porsi</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- DAILY TREND CHART -->
+                <section class="daily-chart-card">
+                    <div class="daily-chart-header">
+                        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                            <span class="daily-chart-title">Tren volume percakapan harian</span>
+                            <span class="tabular" style="font-size:12px;color:var(--color-text-secondary);">
+                                18.420 post (Orang: 13.541 · Bot: 4.879)
+                            </span>
+                        </div>
+                        <div class="period-tabs">
+                            <button class="period-tab" onclick="switchPeriod(this,'24j')">24j</button>
+                            <button class="period-tab is-active" onclick="switchPeriod(this,'7h')">7h</button>
+                            <button class="period-tab" onclick="switchPeriod(this,'30h')">30h</button>
+                        </div>
+                    </div>
+                    <div class="daily-svg-wrap">
+                        <svg width="100%" height="96" viewBox="0 0 1000 96" preserveAspectRatio="none">
+                            <defs>
+                                <linearGradient id="dailyGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stop-color="#18b26f" stop-opacity="0.22"/>
+                                    <stop offset="100%" stop-color="#18b26f" stop-opacity="0"/>
+                                </linearGradient>
+                            </defs>
+                            <line x1="0" y1="20" x2="1000" y2="20" stroke="var(--color-border-subtle)" stroke-width="1"/>
+                            <line x1="0" y1="50" x2="1000" y2="50" stroke="var(--color-border-subtle)" stroke-width="1"/>
+                            <line x1="0" y1="80" x2="1000" y2="80" stroke="var(--color-border-subtle)" stroke-width="1"/>
+                            <path id="dailyAreaPath" d="M0 70 C80 65,120 75,200 55 C280 35,320 60,400 40 C480 20,520 50,600 30 C680 10,720 35,800 20 C870 8,920 25,1000 10 L1000 94 L0 94 Z" fill="url(#dailyGrad)"/>
+                            <path id="dailyLinePath" d="M0 70 C80 65,120 75,200 55 C280 35,320 60,400 40 C480 20,520 50,600 30 C680 10,720 35,800 20 C870 8,920 25,1000 10" fill="none" stroke="var(--color-teal)" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <div class="daily-axis-labels tabular">
+                        <span>Sen 1 Nov</span><span>Sel 2 Nov</span><span>Rab 3 Nov</span><span>Kam 4 Nov</span><span>Jum 5 Nov</span><span>Sab 6 Nov</span>
+                    </div>
+                </section>
+
+                <!-- ISSUES TABLE -->
+                <main class="issues-table-card">
+                    <div class="issues-card-topbar">
+                        <span class="issues-card-title">Isu terpantau</span>
+                        <div class="search-clean-wrap">
+                            <svg class="search-clean-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" class="search-clean-input" placeholder="Cari isu..." oninput="filterIssues(this.value)">
+                        </div>
+                    </div>
+
+                    <!-- Issue rows generated by JS -->
+                    <div id="issuesList"></div>
+                </main>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: ANALYTICS
+             =========================================================== -->
+        <div class="page" id="page-analytics">
+            <div class="main-scroll">
+                <header class="page-title-bar">
+                    <h1 class="page-heading">Grafik Analitik <span class="page-heading-muted">· Monitoring Forensik</span></h1>
+                </header>
+
+                <!-- 4 KPI Cards -->
+                <div class="analytics-kpi-strip">
+                    <div class="analytic-kpi-card">
+                        <div class="analytic-kpi-label">Total Postingan Dianalisis</div>
+                        <div class="analytic-kpi-val tabular">247.831</div>
+                        <div class="analytic-kpi-meta"><span style="color:var(--color-teal-dark);">↑ 12,4%</span> vs minggu lalu</div>
+                    </div>
+                    <div class="analytic-kpi-card">
+                        <div class="analytic-kpi-label">Rata-rata Sentimen Positif</div>
+                        <div class="analytic-kpi-val tabular">54,2%</div>
+                        <div class="analytic-kpi-meta"><span style="color:var(--color-teal-dark);">↑ 3,1%</span> vs minggu lalu</div>
+                    </div>
+                    <div class="analytic-kpi-card">
+                        <div class="analytic-kpi-label">Akun Terdeteksi Bot</div>
+                        <div class="analytic-kpi-val tabular">1.284</div>
+                        <div class="analytic-kpi-meta"><span style="color:var(--color-red-dark);">↑ 8,7%</span> anomali baru</div>
+                    </div>
+                    <div class="analytic-kpi-card">
+                        <div class="analytic-kpi-label">Isu Aktif Dipantau</div>
+                        <div class="analytic-kpi-val tabular">10</div>
+                        <div class="analytic-kpi-meta">3 trending · 5 stabil · 2 turun</div>
+                    </div>
+                </div>
+
+                <!-- Charts 2 col -->
+                <div class="charts-grid-2col">
+                    <div class="chart-box-card">
+                        <div class="chart-box-title">
+                            Volume per Platform
+                            <select class="btn-clean" style="font-size:12px;padding:4px 10px;">
+                                <option>7 hari</option>
+                                <option>30 hari</option>
+                            </select>
+                        </div>
+                        <canvas id="platformChart" height="200"></canvas>
+                    </div>
+                    <div class="chart-box-card">
+                        <div class="chart-box-title">Distribusi Sentimen</div>
+                        <canvas id="sentimentChart" height="200"></canvas>
+                    </div>
+                </div>
+
+                <!-- Chart Bar Isu -->
+                <div class="chart-box-card">
+                    <div class="chart-box-title">Volume Postingan per Isu</div>
+                    <canvas id="issueBarChart" height="120"></canvas>
+                </div>
+
+                <!-- Monitor Tables -->
+                <div class="charts-grid-2col">
+                    <div class="monitor-table-card">
+                        <div class="monitor-table-head">
+                            <span>🔑 Top Kata Kunci</span>
+                            <span style="font-size:12px;color:var(--color-text-muted);font-weight:400;">7 hari terakhir</span>
+                        </div>
+                        <div id="keywordsTable"></div>
+                    </div>
+                    <div class="monitor-table-card">
+                        <div class="monitor-table-head">
+                            <span>⚡ Akun Pemicu Teratas</span>
+                            <span style="font-size:12px;color:var(--color-text-muted);font-weight:400;">bot score tinggi</span>
+                        </div>
+                        <div id="topAccountsTable"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: FEED (Split Screen)
+             =========================================================== -->
+        <div class="page" id="page-feed">
+            <div class="main-scroll">
+                <div class="feed-context-card">
+                    <div class="feed-context-top">
+                        <div>
+                            <div class="breadcrumb-back" onclick="navigateTo('dashboard')">← Dashboard</div>
+                            <div class="feed-context-title">
+                                <span id="feedIssueTitle">Pemilu 2026</span>
+                                <span class="status-pill is-up">▲ Naik</span>
+                            </div>
+                        </div>
+                        <div style="font-size:12px;color:var(--color-text-muted);">94.800 post total</div>
+                    </div>
+                    <div class="feed-toolbar-row">
+                        <div class="platform-switch-pills">
+                            <button class="plat-pill is-active" onclick="switchFeedPlatform(this,'twitter')">Twitter/X</button>
+                            <button class="plat-pill" onclick="switchFeedPlatform(this,'instagram')">Instagram</button>
+                            <button class="plat-pill" onclick="switchFeedPlatform(this,'facebook')">Facebook</button>
+                            <button class="plat-pill" onclick="switchFeedPlatform(this,'tiktok')">TikTok</button>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <select class="btn-clean" style="font-size:12px;padding:5px 10px;">
+                                <option>Terbaru</option>
+                                <option>Engagement Tertinggi</option>
+                                <option>Bot Score Tertinggi</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Split Grid -->
+                <div class="split-feed-grid">
+                    <!-- Kolom Kiri: Orang -->
+                    <div class="split-column-box">
+                        <div class="split-col-header">
+                            <div class="split-col-title">
+                                <span style="color:var(--color-teal-dark);">●</span>
+                                Postingan Warga Organik
+                            </div>
+                            <span class="tabular" style="font-size:12px;color:var(--color-text-muted);" id="humanCount">12.418 post</span>
+                        </div>
+                        <div class="split-col-scroll" id="humanFeed"></div>
+                    </div>
+
+                    <!-- Kolom Kanan: Bot -->
+                    <div class="split-column-box">
+                        <div class="split-col-header">
+                            <div class="split-col-title">
+                                <span style="color:var(--color-red-dark);">●</span>
+                                Jaringan Bot Terdeteksi
+                            </div>
+                            <span class="tabular" style="font-size:12px;color:var(--color-text-muted);" id="botCount">4.280 post</span>
+                        </div>
+                        <div class="split-col-scroll" id="botFeed"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: ISSUES MANAGEMENT
+             =========================================================== -->
+        <div class="page" id="page-issues">
+            <div class="main-scroll">
+                <header class="page-title-bar">
+                    <h1 class="page-heading">Kelola Isu</h1>
+                    <div class="top-right-actions">
+                        <button class="btn-clean btn-primary" onclick="openAddIssueModal()">+ Tambah Isu</button>
+                    </div>
+                </header>
+                <div class="issues-mgmt-card">
+                    <div class="issues-mgmt-topbar">
+                        <span style="font-size:14px;font-weight:700;color:var(--color-text-primary);">Daftar Isu</span>
+                        <span style="font-size:12px;color:var(--color-text-muted);">10 isu aktif</span>
+                    </div>
+                    <div id="issuesMgmtList"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: ACCOUNTS
+             =========================================================== -->
+        <div class="page" id="page-accounts">
+            <div class="main-scroll">
+                <header class="page-title-bar">
+                    <h1 class="page-heading">Akun Terpantau</h1>
+                    <div class="top-right-actions">
+                        <button class="btn-clean btn-primary" onclick="showToast('Fitur tambah akun', false)">+ Tambah Akun</button>
+                    </div>
+                </header>
+                <div class="accounts-grid" id="accountsGrid"></div>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: CHATBOT
+             =========================================================== -->
+        <div class="page" id="page-chatbot">
+            <div class="main-scroll" style="padding:16px 28px;">
+                <section class="chatbot-shell">
+                    <aside class="chat-history-sidebar">
+                        <button class="new-chat-btn" onclick="createNewChat()">+ Chat Baru</button>
+                        <div class="chat-history-heading">Riwayat Chat</div>
+                        <div class="chat-history-list" id="chatHistoryList"></div>
+                    </aside>
+                    <div class="chat-main-panel">
+                        <div id="chatEmptyState" class="chat-empty-state">
+                            <h1 class="chat-empty-title">Halo 👋</h1>
+                        </div>
+                        <div class="chat-messages-scroll" id="chatMessages" style="display:none;"></div>
+                        <div class="chat-input-bar">
+                            <textarea id="chatInput" class="chat-textarea" rows="1" placeholder="Tanya tentang data SOSPEM..." onkeydown="handleChatKey(event)"></textarea>
+                            <button class="btn-clean btn-primary" style="height:44px;padding:0 18px;" onclick="sendChatMessage()">Kirim</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ===========================================================
+             PAGE: METHODOLOGY
+             =========================================================== -->
+        <div class="page" id="page-methodology">
+            <div class="main-scroll">
+                <header class="page-title-bar">
+                    <h1 class="page-heading">Metodologi & UU PDP</h1>
+                </header>
+                <div class="methodology-card">
+                    <h2>Dasar Hukum & Kepatuhan</h2>
+                    <p>Sistem SOSPEM (Sistem Observasi Sentimen Publik dan Ekosistem Media) dikembangkan sesuai dengan kerangka hukum yang berlaku di Indonesia, termasuk Undang-Undang Nomor 27 Tahun 2022 tentang Perlindungan Data Pribadi (UU PDP).</p>
+
+                    <div class="meth-section">
+                        <h2>Prinsip Pengumpulan Data</h2>
+                        <ul>
+                            <li>Data yang dikumpulkan hanya berupa konten publik yang dapat diakses tanpa otentikasi.</li>
+                            <li>Tidak menyimpan informasi identifikasi pribadi (nama lengkap, nomor telepon, alamat email) secara permanen.</li>
+                            <li>Pseudonimisasi diterapkan pada semua identitas akun yang diproses.</li>
+                            <li>Retensi data dibatasi maksimal 90 hari sesuai kebijakan platform.</li>
+                        </ul>
+                    </div>
+
+                    <div class="meth-section">
+                        <h2>Metodologi Deteksi Bot</h2>
+                        <p>Sistem menggunakan kombinasi analisis heuristik dan model machine learning untuk mendeteksi akun bot:</p>
+                        <ul>
+                            <li><strong>Frekuensi posting anomali</strong> — lebih dari 50 post/jam secara konsisten.</li>
+                            <li><strong>Pola konten duplikat</strong> — kesamaan teks > 85% antar akun dalam satu cluster.</li>
+                            <li><strong>Rasio follow/follower tidak wajar</strong> — menggunakan threshold statistik per platform.</li>
+                            <li><strong>Koordinasi temporal</strong> — burst activity dalam rentang waktu < 60 detik secara bersamaan.</li>
+                        </ul>
+                    </div>
+
+                    <div class="meth-section">
+                        <h2>Analisis Sentimen</h2>
+                        <p>Model analisis sentimen dilatih menggunakan korpus Bahasa Indonesia dari berbagai domain percakapan publik. Klasifikasi mencakup tiga kelas: Positif, Negatif, dan Netral. Tingkat akurasi model rata-rata <strong>87,3%</strong> pada data uji yang dikurasi secara manual.</p>
+                    </div>
+
+                    <div class="meth-section">
+                        <h2>Transparansi & Akuntabilitas</h2>
+                        <ul>
+                            <li>Semua algoritma didokumentasikan dan tersedia untuk audit internal.</li>
+                            <li>Laporan bulanan tentang akurasi dan bias model diterbitkan secara internal.</li>
+                            <li>Mekanisme pelaporan tersedia untuk koreksi data yang tidak akurat.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end main-content -->
+</div><!-- end app-shell -->
+
+<!-- ==================================================================
+     MODAL — SCRAPE LIVE
+     ================================================================== -->
+<div class="modal-overlay" id="scrapeModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <span class="modal-title">⚡ Scrape Live — Tambah Data Real-time</span>
+            <button class="modal-close" onclick="closeScrapeModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label class="form-label">Platform</label>
+                <select class="form-select">
+                    <option>Twitter / X</option>
+                    <option>Instagram</option>
+                    <option>Facebook</option>
+                    <option>TikTok</option>
+                    <option>YouTube</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Kata Kunci / Hashtag</label>
+                <input type="text" class="form-input" placeholder="#pemilu2026, pemilu, pilkada">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Isu Terkait</label>
+                <select class="form-select">
+                    <option>Pemilu 2026</option>
+                    <option>Kenaikan BBM</option>
+                    <option>IKN Nusantara</option>
+                    <option>Harga Pangan</option>
+                    <option>Korupsi KPK</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Jumlah Data Maksimum</label>
+                <input type="number" class="form-input" value="500" min="10" max="5000">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-clean" onclick="closeScrapeModal()">Batal</button>
+            <button class="btn-clean btn-blue" onclick="submitScrape()">⚡ Mulai Scrape</button>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast">
+    <div class="toast-dot" id="toastDot"></div>
+    <span id="toastMsg">Berhasil</span>
+</div>
+
+<!-- ==================================================================
+     SCRIPT
+     ================================================================== -->
+<script>
+/* ============================================================
+   DATA DUMMY
+   ============================================================ */
+const ISSUES_DATA = [
+    { rank:1, slug:'pemilu-2026', title:'Pemilu 2026', trend:'up', total:94800, human_pct:68.2, bot_pct:31.8, pos_pct:52.4, neg_pct:47.6,
+      platforms:{ twitter:{name:'Twitter/X',volume:'41.2K',human_pos:55.1,human_neg:44.9,bot_pos:48.2,bot_neg:51.8}, instagram:{name:'Instagram',volume:'28.5K',human_pos:62.3,human_neg:37.7,bot_pos:40.1,bot_neg:59.9}, facebook:{name:'Facebook',volume:'18.1K',human_pos:48.6,human_neg:51.4,bot_pos:52.3,bot_neg:47.7}, tiktok:{name:'TikTok',volume:'7K',human_pos:70.2,human_neg:29.8,bot_pos:35.4,bot_neg:64.6} } },
+    { rank:2, slug:'kenaikan-bbm', title:'Kenaikan BBM', trend:'up', total:51200, human_pct:74.8, bot_pct:25.2, pos_pct:21.3, neg_pct:78.7,
+      platforms:{ twitter:{name:'Twitter/X',volume:'24K',human_pos:18.2,human_neg:81.8,bot_pos:60.1,bot_neg:39.9}, instagram:{name:'Instagram',volume:'14.2K',human_pos:25.4,human_neg:74.6,bot_pos:55.2,bot_neg:44.8}, facebook:{name:'Facebook',volume:'13K',human_pos:19.8,human_neg:80.2,bot_pos:62.4,bot_neg:37.6} } },
+    { rank:3, slug:'ikn-nusantara', title:'IKN Nusantara', trend:'stable', total:38750, human_pct:81.3, bot_pct:18.7, pos_pct:63.8, neg_pct:36.2,
+      platforms:{ twitter:{name:'Twitter/X',volume:'18K',human_pos:65.2,human_neg:34.8,bot_pos:70.1,bot_neg:29.9}, instagram:{name:'Instagram',volume:'12.5K',human_pos:68.4,human_neg:31.6,bot_pos:66.3,bot_neg:33.7}, tiktok:{name:'TikTok',volume:'8.25K',human_pos:60.1,human_neg:39.9,bot_pos:72.4,bot_neg:27.6} } },
+    { rank:4, slug:'harga-pangan', title:'Harga Pangan', trend:'up', total:29400, human_pct:88.1, bot_pct:11.9, pos_pct:18.6, neg_pct:81.4,
+      platforms:{ twitter:{name:'Twitter/X',volume:'14K',human_pos:16.1,human_neg:83.9,bot_pos:72.3,bot_neg:27.7}, facebook:{name:'Facebook',volume:'15.4K',human_pos:20.8,human_neg:79.2,bot_pos:68.4,bot_neg:31.6} } },
+    { rank:5, slug:'korupsi-kpk', title:'Korupsi KPK', trend:'down', total:22100, human_pct:76.4, bot_pct:23.6, pos_pct:12.4, neg_pct:87.6,
+      platforms:{ twitter:{name:'Twitter/X',volume:'15.2K',human_pos:10.2,human_neg:89.8,bot_pos:35.4,bot_neg:64.6}, instagram:{name:'Instagram',volume:'6.9K',human_pos:14.8,human_neg:85.2,bot_pos:40.1,bot_neg:59.9} } },
+    { rank:6, slug:'uu-kesehatan', title:'UU Kesehatan', trend:'stable', total:18300, human_pct:82.6, bot_pct:17.4, pos_pct:38.2, neg_pct:61.8,
+      platforms:{ twitter:{name:'Twitter/X',volume:'9.8K',human_pos:36.1,human_neg:63.9,bot_pos:60.2,bot_neg:39.8}, instagram:{name:'Instagram',volume:'8.5K',human_pos:40.4,human_neg:59.6,bot_pos:55.3,bot_neg:44.7} } },
+    { rank:7, slug:'tapera', title:'Tapera', trend:'down', total:14800, human_pct:91.2, bot_pct:8.8, pos_pct:22.1, neg_pct:77.9,
+      platforms:{ twitter:{name:'Twitter/X',volume:'9.2K',human_pos:20.1,human_neg:79.9,bot_pos:68.4,bot_neg:31.6}, instagram:{name:'Instagram',volume:'5.6K',human_pos:24.8,human_neg:75.2,bot_pos:62.1,bot_neg:37.9} } },
+    { rank:8, slug:'naturalisasi-pemain', title:'Naturalisasi Pemain Bola', trend:'up', total:11200, human_pct:92.8, bot_pct:7.2, pos_pct:84.3, neg_pct:15.7,
+      platforms:{ twitter:{name:'Twitter/X',volume:'6.4K',human_pos:86.2,human_neg:13.8,bot_pos:78.1,bot_neg:21.9}, instagram:{name:'Instagram',volume:'4.8K',human_pos:82.4,human_neg:17.6,bot_pos:74.3,bot_neg:25.7} } },
+    { rank:9, slug:'ojol-demo', title:'Demo Driver Ojol', trend:'stable', total:8700, human_pct:89.4, bot_pct:10.6, pos_pct:41.2, neg_pct:58.8,
+      platforms:{ twitter:{name:'Twitter/X',volume:'5.1K',human_pos:38.4,human_neg:61.6,bot_pos:55.2,bot_neg:44.8}, tiktok:{name:'TikTok',volume:'3.6K',human_pos:44.1,human_neg:55.9,bot_pos:50.4,bot_neg:49.6} } },
+    { rank:10, slug:'timnas-aff', title:'Timnas AFF 2026', trend:'up', total:6800, human_pct:95.1, bot_pct:4.9, pos_pct:91.2, neg_pct:8.8,
+      platforms:{ twitter:{name:'Twitter/X',volume:'4.1K',human_pos:92.1,human_neg:7.9,bot_pos:82.3,bot_neg:17.7}, instagram:{name:'Instagram',volume:'2.7K',human_pos:90.4,human_neg:9.6,bot_pos:80.1,bot_neg:19.9} } },
+];
+
+const ACCOUNTS_DATA = [
+    { platform:'twitter', badge:'badge-twitter', name:'@politikupdate', handle:'@politikupdate', posts:4821, bot_score:92, followers:'124K' },
+    { platform:'instagram', badge:'badge-instagram', name:'infopemilu_id', handle:'@infopemilu_id', posts:2340, bot_score:87, followers:'89K' },
+    { platform:'twitter', badge:'badge-twitter', name:'@news_bot_id', handle:'@news_bot_id', posts:8104, bot_score:96, followers:'31K' },
+    { platform:'facebook', badge:'badge-facebook', name:'Suara Rakyat Indonesia', handle:'fb/suararakyat', posts:1820, bot_score:74, followers:'241K' },
+    { platform:'tiktok', badge:'badge-tiktok', name:'@infoviralterkini', handle:'@infoviralterkini', posts:654, bot_score:61, followers:'512K' },
+    { platform:'twitter', badge:'badge-twitter', name:'@bbm_naik_terus', handle:'@bbm_naik_terus', posts:3290, bot_score:95, followers:'12K' },
+    { platform:'instagram', badge:'badge-instagram', name:'infobola.id', handle:'@infobola.id', posts:1120, bot_score:38, followers:'880K' },
+    { platform:'facebook', badge:'badge-facebook', name:'Pantau Politik', handle:'fb/pantaupolitik', posts:2810, bot_score:82, followers:'145K' },
+];
+
+const FEED_POSTS = {
+    human: [
+        { name:'Budi Santoso', handle:'@budi_snt', time:'2 menit lalu', text:'Sebagai warga biasa, aku berharap pemilu 2026 bisa berjalan damai. Jangan ada hoaks, jangan ada intimidasi. Kita semua bersaudara 🙏', likes:124, rt:38, sentiment:'pos' },
+        { name:'Sari Dewi', handle:'@saridewi_jkt', time:'8 menit lalu', text:'Nonton debat kandidat semalam, ada beberapa poin menarik soal kebijakan ekonomi. Masing-masing punya argumentasi sendiri. Saya masih belum yakin mau pilih siapa.', likes:87, rt:12, sentiment:'neu' },
+        { name:'Ahmad Fauzi', handle:'@fauzi_malang', time:'15 menit lalu', text:'BBM naik lagi??? Bagaimana rakyat kecil bisa bertahan? Sudah kerja keras tapi hasilnya habis buat beli bensin sama makan. Kebijakan ini perlu dikaji ulang!', likes:342, rt:198, sentiment:'neg' },
+        { name:'Rina Kusuma', handle:'@rina_ksm', time:'22 menit lalu', text:'Alhamdulillah ada program bantuan pangan dari pemerintah daerah. Semoga bisa terus berlanjut dan menjangkau lebih banyak masyarakat yang membutuhkan.', likes:56, rt:14, sentiment:'pos' },
+        { name:'Doni Prasetyo', handle:'@donipras_sby', time:'31 menit lalu', text:'Kasus korupsi di KPK ini beneran bikin miris. Lembaga yang seharusnya memberantas korupsi malah terlibat. Kapan Indonesia bisa bersih dari yang kayak gini?', likes:891, rt:435, sentiment:'neg' },
+        { name:'Maya Lestari', handle:'@maya_lstr', time:'45 menit lalu', text:'Naturalisasi pemain bola memang kontroversial, tapi hasil di lapangan tidak bohong. Timnas semakin kompetitif dan itu yang penting untuk perkembangan sepakbola Indonesia 🇮🇩⚽', likes:267, rt:89, sentiment:'pos' },
+    ],
+    bot: [
+        { name:'akun_bot_7291', handle:'@bot_7291', time:'1 menit lalu', text:'PILIH KANDIDAT X UNTUK MASA DEPAN LEBIH BAIK! #pemilu2026 #pilihX #perubahan PILIH KANDIDAT X UNTUK MASA DEPAN LEBIH BAIK! Repost ini 100x untuk semangat!', likes:3, rt:2847, sentiment:'pos', isBot:true, bot_score:97 },
+        { name:'infoupdate_8821', handle:'@infoupdate_8821', time:'2 menit lalu', text:'BBM naik karena pemerintah GAGAL!! Rakyat menderita!! Bagikan ke semua!! #bbmnaik #gagalpemerintah #tolakbbmnaik rakyat menderita rakyat lapar pemerintah diam', likes:1, rt:1203, sentiment:'neg', isBot:true, bot_score:94 },
+        { name:'news_auto_4512', handle:'@news_auto_4512', time:'3 menit lalu', text:'Breaking: Situasi politik memanas jelang pemilu 2026. Waspadai provokasi! #pemilu2026 #politik #berita Breaking: Situasi politik memanas jelang pemilu 2026.', likes:0, rt:892, sentiment:'neg', isBot:true, bot_score:96 },
+        { name:'viral_post_9931', handle:'@viral_post_9931', time:'4 menit lalu', text:'INFO VIRAL: Harga pangan terus melonjak! Masyarakat kesulitan! Bagikan info ini! #hargapangan #inflasi #ekonomi INFO VIRAL: Harga pangan terus melonjak!', likes:2, rt:1567, sentiment:'neg', isBot:true, bot_score:91 },
+        { name:'update_otomatis_02', handle:'@update_otomatis_02', time:'5 menit lalu', text:'BREAKING NEWS #ikn #nusantara #ibu kota baru pembangunan terus berlanjut infrastruktur rampung tepat waktu BREAKING NEWS pembangunan IKN sesuai target', likes:1, rt:734, sentiment:'pos', isBot:true, bot_score:89 },
+    ]
+};
+
+const KEYWORDS_DATA = [
+    { word:'#pemilu2026', count:28400, pct:84 },
+    { word:'#bbmnaik', count:15200, pct:68 },
+    { word:'#korupsi', count:12800, pct:62 },
+    { word:'#ikn', count:9400, pct:48 },
+    { word:'#hargapangan', count:7800, pct:40 },
+    { word:'#tapera', count:5200, pct:30 },
+    { word:'#naturalisasi', count:4100, pct:24 },
+    { word:'#timnas', count:3600, pct:22 },
+];
+
+const TOP_ACCOUNTS_DATA = [
+    { handle:'@news_bot_id', posts:8104, bot_score:96, platform:'Twitter' },
+    { handle:'@bbm_naik_terus', posts:3290, bot_score:95, platform:'Twitter' },
+    { handle:'@politikupdate', posts:4821, bot_score:92, platform:'Twitter' },
+    { handle:'infopemilu_id', posts:2340, bot_score:87, platform:'Instagram' },
+    { handle:'Pantau Politik', posts:2810, bot_score:82, platform:'Facebook' },
+    { handle:'Suara Rakyat', posts:1820, bot_score:74, platform:'Facebook' },
+];
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+let currentPage = 'dashboard';
+let chartsInitialized = false;
+
+function navigateTo(page) {
+    // Deactivate all pages
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('is-active'));
+    document.querySelectorAll('.side-nav-link').forEach(l => l.classList.remove('is-active'));
+
+    // Activate target
+    const pageEl = document.getElementById('page-' + page);
+    if (pageEl) pageEl.classList.add('is-active');
+    const navEl = document.getElementById('nav-' + page);
+    if (navEl) navEl.classList.add('is-active');
+
+    currentPage = page;
+
+    // Page-specific inits
+    if (page === 'dashboard') renderIssuesList('');
+    if (page === 'analytics' && !chartsInitialized) { initCharts(); chartsInitialized = true; }
+    if (page === 'analytics') { renderKeywordsTable(); renderTopAccountsTable(); }
+    if (page === 'feed') renderFeedPosts('twitter');
+    if (page === 'issues') renderIssuesMgmt();
+    if (page === 'accounts') renderAccounts();
+    if (page === 'chatbot') initChat();
+}
+
+/* ============================================================
+   SIDEBAR TOGGLE
+   ============================================================ */
+function toggleSidebar() {
+    document.getElementById('leftSidebar').classList.toggle('is-minimized');
+}
+
+/* ============================================================
+   THEME TOGGLE
+   ============================================================ */
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    document.getElementById('themeBtn').textContent = isDark ? '☀️' : '🌙';
+}
+
+/* ============================================================
+   ISSUES LIST — DASHBOARD
+   ============================================================ */
+function renderIssuesList(query) {
+    const container = document.getElementById('issuesList');
+    if (!container) return;
+    const filtered = ISSUES_DATA.filter(i =>
+        i.title.toLowerCase().includes(query.toLowerCase())
+    );
+    container.innerHTML = filtered.map((issue, idx) => `
+        <article class="issue-item ${idx === 0 ? 'is-lead is-expanded' : ''}" id="issue-${issue.slug}">
+            <div class="issue-row-header" onclick="toggleExpand(this)">
+                <div class="issue-avatar tabular">${issue.rank}</div>
+                <div class="issue-primary">
+                    <div class="issue-name">${issue.title}</div>
+                </div>
+                <div class="bar-group-box hide-on-tablet">
+                    <div class="bar-labels"><span>Orang ${issue.human_pct.toFixed(1)}%</span><span>Bot ${issue.bot_pct.toFixed(1)}%</span></div>
+                    <div class="bar-track">
+                        <div class="bar-fill-teal" style="width:${issue.human_pct}%"></div>
+                        <div class="bar-fill-slate" style="width:${issue.bot_pct}%"></div>
+                    </div>
+                </div>
+                <div class="bar-group-box hide-on-tablet">
+                    <div class="bar-labels"><span>+${issue.pos_pct.toFixed(1)}% Pos</span><span>${issue.neg_pct.toFixed(1)}% Neg</span></div>
+                    <div class="bar-track">
+                        <div class="bar-fill-teal" style="width:${issue.pos_pct}%"></div>
+                        <div class="bar-fill-slate" style="width:${issue.neg_pct}%"></div>
+                    </div>
+                </div>
+                <div class="total-posts-col tabular">${issue.total.toLocaleString('id')} post</div>
+                <div>${trendBadge(issue.trend)}</div>
+            </div>
+            <div class="issue-expansion-panel">
+                <div class="platform-grid">
+                    ${Object.entries(issue.platforms).map(([key, plat]) => `
+                        <div class="platform-card-link" onclick="goToFeed('${issue.title}', '${key}')">
+                            <div class="platform-header">
+                                <span>${plat.name}</span>
+                                <span style="color:var(--color-text-muted);font-size:11.5px;">${plat.volume}</span>
+                            </div>
+                            <div class="segment-row">
+                                <span class="segment-label"><span class="dot-teal"></span>Orang (Warga)</span>
+                                <span class="segment-metric tabular">
+                                    <span style="color:var(--color-teal-dark);">+${plat.human_pos.toFixed(1)}%</span>
+                                    <span style="color:var(--color-text-muted);">/</span>
+                                    <span style="color:var(--color-red-dark);">-${plat.human_neg.toFixed(1)}%</span>
+                                </span>
+                            </div>
+                            <div class="segment-row">
+                                <span class="segment-label"><span class="dot-slate"></span>Jaringan Bot</span>
+                                <span class="segment-metric tabular">
+                                    <span style="color:var(--color-teal-dark);">+${plat.bot_pos.toFixed(1)}%</span>
+                                    <span style="color:var(--color-text-muted);">/</span>
+                                    <span style="color:var(--color-red-dark);">-${plat.bot_neg.toFixed(1)}%</span>
+                                </span>
+                            </div>
+                            <div class="platform-cta-hint">Lihat Feed →</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </article>
+    `).join('');
+}
+
+function trendBadge(trend) {
+    if (trend === 'up') return '<span class="status-pill is-up">▲ Naik</span>';
+    if (trend === 'down') return '<span class="status-pill is-down">▼ Turun</span>';
+    return '<span class="status-pill is-stable">━ Stabil</span>';
+}
+
+function toggleExpand(header) {
+    const article = header.closest('.issue-item');
+    article.classList.toggle('is-expanded');
+}
+
+function filterIssues(val) {
+    renderIssuesList(val);
+}
+
+function goToFeed(issueTitle, platform) {
+    document.getElementById('feedIssueTitle').textContent = issueTitle;
+    navigateTo('feed');
+    document.querySelectorAll('.plat-pill').forEach(p => {
+        p.classList.toggle('is-active', p.textContent.toLowerCase().includes(platform));
+    });
+    renderFeedPosts(platform);
+}
+
+/* ============================================================
+   PERIOD TABS — DASHBOARD CHART
+   ============================================================ */
+function switchPeriod(btn, period) {
+    document.querySelectorAll('.period-tab').forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    // Animate chart path change (mockup only)
+    const paths = {
+        '24j': 'M0 80 C60 70,100 85,180 65 C260 45,310 75,400 55 C490 35,540 60,620 45 C700 30,750 50,830 35 C890 25,940 40,1000 20 L1000 94 L0 94 Z',
+        '7h':  'M0 70 C80 65,120 75,200 55 C280 35,320 60,400 40 C480 20,520 50,600 30 C680 10,720 35,800 20 C870 8,920 25,1000 10 L1000 94 L0 94 Z',
+        '30h': 'M0 60 C70 55,110 68,200 48 C290 28,330 55,420 38 C510 20,560 44,650 28 C740 12,790 32,880 18 C930 10,960 22,1000 8 L1000 94 L0 94 Z'
+    };
+    const linePaths = {
+        '24j': 'M0 80 C60 70,100 85,180 65 C260 45,310 75,400 55 C490 35,540 60,620 45 C700 30,750 50,830 35 C890 25,940 40,1000 20',
+        '7h':  'M0 70 C80 65,120 75,200 55 C280 35,320 60,400 40 C480 20,520 50,600 30 C680 10,720 35,800 20 C870 8,920 25,1000 10',
+        '30h': 'M0 60 C70 55,110 68,200 48 C290 28,330 55,420 38 C510 20,560 44,650 28 C740 12,790 32,880 18 C930 10,960 22,1000 8'
+    };
+    document.getElementById('dailyAreaPath').setAttribute('d', paths[period]);
+    document.getElementById('dailyLinePath').setAttribute('d', linePaths[period]);
+}
+
+/* ============================================================
+   SCRAPE MODAL
+   ============================================================ */
+function openScrapeModal() {
+    document.getElementById('scrapeModal').classList.add('is-active');
+}
+function closeScrapeModal() {
+    document.getElementById('scrapeModal').classList.remove('is-active');
+}
+function submitScrape() {
+    closeScrapeModal();
+    showToast('Scrape job berhasil dibuat! Memproses data...', false);
+}
+
+/* ============================================================
+   SIMULATE STREAM
+   ============================================================ */
+function simulateStream() {
+    const kpi = document.getElementById('kpiTotalSampel');
+    if (!kpi) return;
+    let val = parseInt(kpi.textContent.replace(/\./g, ''));
+    const interval = setInterval(() => {
+        val += Math.floor(Math.random() * 15) + 1;
+        kpi.textContent = val.toLocaleString('id');
+    }, 300);
+    setTimeout(() => clearInterval(interval), 4000);
+    showToast('Simulasi stream aktif...', false);
+}
+
+/* ============================================================
+   ANALYTICS — CHARTS
+   ============================================================ */
+function initCharts() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#9e9e9e' : '#64748b';
+    const gridColor = isDark ? '#2b2b2b' : '#e2e8f0';
+
+    const defaults = {
+        color: textColor,
+        plugins: { legend: { labels: { color: textColor, font: { family: 'Inter', size: 12 } } } },
+        scales: { x: { ticks: { color: textColor, font: { family: 'Inter', size: 11 } }, grid: { color: gridColor } }, y: { ticks: { color: textColor, font: { family: 'Inter', size: 11 } }, grid: { color: gridColor } } }
+    };
+
+    // Platform Chart
+    new Chart(document.getElementById('platformChart'), {
+        type: 'bar',
+        data: {
+            labels: ['Twitter/X', 'Instagram', 'Facebook', 'TikTok', 'YouTube'],
+            datasets: [
+                { label: 'Orang', data: [42800, 31200, 24100, 11800, 5200], backgroundColor: '#18b26f' },
+                { label: 'Bot', data: [18400, 12100, 9800, 3200, 1800], backgroundColor: isDark ? '#525252' : '#cbd5e1' }
+            ]
+        },
+        options: { ...defaults, responsive: true, plugins: { ...defaults.plugins } }
+    });
+
+    // Sentiment Doughnut
+    new Chart(document.getElementById('sentimentChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Positif', 'Negatif', 'Netral'],
+            datasets: [{ data: [54.2, 31.8, 14], backgroundColor: ['#18b26f', '#f04438', isDark ? '#2a2a2a' : '#cbd5e1'], borderWidth: 0 }]
+        },
+        options: { responsive: true, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { color: textColor, font: { family: 'Inter', size: 12 }, padding: 16 } } } }
+    });
+
+    // Issues Bar
+    new Chart(document.getElementById('issueBarChart'), {
+        type: 'bar',
+        data: {
+            labels: ISSUES_DATA.map(i => i.title),
+            datasets: [{ label: 'Total Post', data: ISSUES_DATA.map(i => i.total), backgroundColor: ISSUES_DATA.map(i => i.rank === 1 ? '#21ce83' : (isDark ? '#2a2a2a' : '#e2e8f0')), borderColor: ISSUES_DATA.map(i => i.rank === 1 ? '#18b26f' : (isDark ? '#3d3d3d' : '#cbd5e1')), borderWidth: 1 }]
+        },
+        options: { ...defaults, responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { ticks: { color: textColor }, grid: { color: gridColor } }, y: { ticks: { color: textColor, font: { size: 11 } }, grid: { display: false } } } }
+    });
+}
+
+function renderKeywordsTable() {
+    document.getElementById('keywordsTable').innerHTML = KEYWORDS_DATA.map(k => `
+        <div class="monitor-row">
+            <span style="font-size:13px;font-weight:500;color:var(--color-text-primary);flex:1;">${k.word}</span>
+            <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${k.pct}%"></div></div>
+            <span class="tabular" style="font-size:12px;color:var(--color-text-secondary);min-width:60px;text-align:right;">${k.count.toLocaleString('id')}</span>
+        </div>
+    `).join('');
+}
+
+function renderTopAccountsTable() {
+    document.getElementById('topAccountsTable').innerHTML = TOP_ACCOUNTS_DATA.map(a => `
+        <div class="monitor-row">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:var(--color-text-primary);">${a.handle}</div>
+                <div style="font-size:11.5px;color:var(--color-text-muted);">${a.platform} · ${a.posts.toLocaleString('id')} post</div>
+            </div>
+            <span style="font-size:12px;font-weight:600;color:${a.bot_score > 90 ? 'var(--color-red-dark)' : a.bot_score > 75 ? '#f97316' : 'var(--color-text-secondary)'}">Bot ${a.bot_score}%</span>
+        </div>
+    `).join('');
+}
+
+/* ============================================================
+   FEED
+   ============================================================ */
+function renderFeedPosts(platform) {
+    const human = document.getElementById('humanFeed');
+    const bot = document.getElementById('botFeed');
+    if (!human || !bot) return;
+
+    human.innerHTML = FEED_POSTS.human.map(p => postCard(p, false)).join('');
+    bot.innerHTML = FEED_POSTS.bot.map(p => postCard(p, true)).join('');
+}
+
+function postCard(p, isBot) {
+    const initials = p.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+    const sentClass = p.sentiment === 'pos' ? 'sent-pill-pos' : p.sentiment === 'neg' ? 'sent-pill-neg' : 'sent-pill-neu';
+    const sentLabel = p.sentiment === 'pos' ? '+ Positif' : p.sentiment === 'neg' ? '– Negatif' : '○ Netral';
+    return `
+        <div class="post-item-card">
+            <div class="post-header">
+                <div class="post-author-info">
+                    <div class="post-avatar">${initials}</div>
+                    <div>
+                        <div class="post-author-name">${p.name}</div>
+                        <div class="post-author-handle">${p.handle}</div>
+                    </div>
+                </div>
+                <span class="post-time">${p.time}</span>
+            </div>
+            <div class="post-body">${p.text}</div>
+            <div class="post-footer">
+                <span class="post-stat">♥ ${p.likes.toLocaleString('id')}</span>
+                <span class="post-stat">↺ ${p.rt.toLocaleString('id')}</span>
+                <span class="${sentClass}">${sentLabel}</span>
+                ${isBot ? `<span class="post-badge-bot">🤖 Bot ${p.bot_score}%</span>` : '<span class="post-badge-human">✓ Organik</span>'}
+            </div>
+        </div>`;
+}
+
+function switchFeedPlatform(btn, platform) {
+    document.querySelectorAll('.plat-pill').forEach(p => p.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    renderFeedPosts(platform);
+}
+
+/* ============================================================
+   ISSUES MANAGEMENT
+   ============================================================ */
+function renderIssuesMgmt() {
+    document.getElementById('issuesMgmtList').innerHTML = ISSUES_DATA.map(issue => `
+        <div class="issues-mgmt-row">
+            <div class="issues-mgmt-rank">${issue.rank}</div>
+            <div style="flex:1;min-width:0;">
+                <div class="issues-mgmt-title">${issue.title}</div>
+                <div class="issues-mgmt-keywords">Bot: ${issue.bot_pct.toFixed(1)}% · Orang: ${issue.human_pct.toFixed(1)}% · ${issue.total.toLocaleString('id')} post</div>
+            </div>
+            <select class="trend-select" onchange="showToast('Tren ${issue.title} diperbarui', false)">
+                <option ${issue.trend==='up'?'selected':''} value="up">▲ Naik</option>
+                <option ${issue.trend==='stable'?'selected':''} value="stable">━ Stabil</option>
+                <option ${issue.trend==='down'?'selected':''} value="down">▼ Turun</option>
+            </select>
+            <button class="account-delete-btn" onclick="showToast('Isu dihapus (mockup)', true)">🗑</button>
+        </div>
+    `).join('');
+}
+
+function openAddIssueModal() {
+    showToast('Form tambah isu (mockup)', false);
+}
+
+/* ============================================================
+   ACCOUNTS
+   ============================================================ */
+function renderAccounts() {
+    document.getElementById('accountsGrid').innerHTML = ACCOUNTS_DATA.map(a => `
+        <div class="account-card">
+            <div class="account-header">
+                <div>
+                    <div class="account-name">${a.name}</div>
+                    <div class="account-handle">${a.handle}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="account-platform-badge ${a.badge}">${a.platform.toUpperCase()}</span>
+                    <button class="account-delete-btn" onclick="showToast('Akun dihapus (mockup)', true)">×</button>
+                </div>
+            </div>
+            <div class="account-stats">
+                <div class="account-stat">
+                    <span class="account-stat-val tabular">${a.posts.toLocaleString('id')}</span>
+                    <span class="account-stat-label">Total Post</span>
+                </div>
+                <div class="account-stat">
+                    <span class="account-stat-val tabular" style="color:${a.bot_score > 85 ? 'var(--color-red-dark)' : a.bot_score > 65 ? '#f97316' : 'var(--color-teal-dark)'};">${a.bot_score}%</span>
+                    <span class="account-stat-label">Bot Score</span>
+                </div>
+                <div class="account-stat">
+                    <span class="account-stat-val tabular">${a.followers}</span>
+                    <span class="account-stat-label">Followers</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+/* ============================================================
+   CHATBOT
+   ============================================================ */
+let chatSessions = [];
+let activeChatId = null;
+let chatInited = false;
+
+function initChat() {
+    if (chatInited) return;
+    chatInited = true;
+    const fresh = { id: 'chat_' + Date.now(), title: 'Chat Baru', messages: [] };
+    chatSessions.push(fresh);
+    activeChatId = fresh.id;
+    renderChatSidebar();
+    renderActiveChat();
+}
+
+function createNewChat() {
+    const fresh = { id: 'chat_' + Date.now(), title: 'Chat Baru', messages: [] };
+    chatSessions.unshift(fresh);
+    activeChatId = fresh.id;
+    renderChatSidebar();
+    renderActiveChat();
+    document.getElementById('chatInput').focus();
+}
+
+function selectChatSession(id) {
+    activeChatId = id;
+    renderChatSidebar();
+    renderActiveChat();
+    document.getElementById('chatInput').focus();
+}
+
+function getActiveSession() {
+    return chatSessions.find(s => s.id === activeChatId);
+}
+
+function renderChatSidebar() {
+    document.getElementById('chatHistoryList').innerHTML = chatSessions.map(s => `
+        <div class="chat-history-item ${s.id === activeChatId ? 'is-active' : ''}" onclick="selectChatSession('${s.id}')">
+            <span class="chat-history-title">${s.title}</span>
+        </div>
+    `).join('') || '<div style="font-size:12px;color:var(--color-text-muted);padding:12px 8px;">Belum ada chat</div>';
+}
+
+function renderActiveChat() {
+    const session = getActiveSession();
+    const emptyEl = document.getElementById('chatEmptyState');
+    const msgEl = document.getElementById('chatMessages');
+    if (!session || session.messages.length === 0) {
+        emptyEl.style.display = 'flex';
+        msgEl.style.display = 'none';
+        msgEl.innerHTML = '';
+        return;
+    }
+    emptyEl.style.display = 'none';
+    msgEl.style.display = 'flex';
+    msgEl.innerHTML = session.messages.map(m => `
+        <div class="chat-bubble-row ${m.role === 'user' ? 'is-user' : 'is-assistant'}">
+            <div class="chat-sender-meta">${m.role === 'user' ? 'Anda' : '🤖 SOSPEM AI'} · ${m.time}</div>
+            <div class="chat-bubble-box">${m.text}</div>
+        </div>
+    `).join('');
+    msgEl.scrollTop = msgEl.scrollHeight;
+}
+
+function handleChatKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+}
+
+const BOT_RESPONSES = [
+    'Berdasarkan data terpantau, isu Pemilu 2026 memiliki volume percakapan tertinggi dengan 94.800 post. Sebesar 31,8% di antaranya terdeteksi sebagai aktivitas bot.',
+    'Analisis sentimen menunjukkan bahwa diskusi tentang kenaikan BBM mayoritas bersifat negatif (78,7%). Ini menunjukkan ketidakpuasan publik yang signifikan.',
+    'Terdapat 1.284 akun yang terdeteksi sebagai bot aktif dalam periode pemantauan ini. Pola koordinasi temporal menjadi indikator utama deteksi.',
+    'Naturalisasi pemain bola merupakan isu dengan sentimen paling positif di antara semua isu yang dipantau (84,3% positif), menunjukkan dukungan publik yang kuat.',
+    'Platform Twitter/X memiliki volume percakapan bot tertinggi dibanding platform lain. Ini konsisten dengan karakteristik platform yang lebih mudah untuk otomatisasi akun.',
+    'Pola bot yang terdeteksi menunjukkan koordinasi waktu posting dalam rentang < 60 detik, dengan kesamaan konten > 85% antar cluster akun.',
+    'Maaf, saya tidak memiliki data yang cukup untuk menjawab pertanyaan tersebut. Coba tanyakan tentang isu yang sedang dipantau atau statistik platform.',
+];
+
+function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    const session = getActiveSession();
+    if (!session) return;
+
+    const now = new Date();
+    const time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')} WIB`;
+
+    if (session.messages.length === 0) {
+        session.title = text.length > 32 ? text.slice(0, 32) + '...' : text;
+    }
+
+    session.messages.push({ role: 'user', text, time });
+    input.value = '';
+    renderChatSidebar();
+    renderActiveChat();
+
+    // Simulate bot response
+    setTimeout(() => {
+        const reply = BOT_RESPONSES[Math.floor(Math.random() * BOT_RESPONSES.length)];
+        session.messages.push({ role: 'assistant', text: reply, time });
+        renderActiveChat();
+    }, 800 + Math.random() * 600);
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+let toastTimer;
+function showToast(msg, isError = false) {
+    const toast = document.getElementById('toast');
+    const dot = document.getElementById('toastDot');
+    document.getElementById('toastMsg').textContent = msg;
+    dot.className = 'toast-dot' + (isError ? ' is-error' : '');
+    toast.classList.add('is-active');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('is-active'), 3000);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', () => {
+    navigateTo('dashboard');
+});
+</script>
+</body>
+</html>

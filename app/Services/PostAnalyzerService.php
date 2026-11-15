@@ -354,7 +354,12 @@ class PostAnalyzerService
             $platform = $this->normalizePlatform($rawPlat !== '' ? $rawPlat : $rawOrigin);
         }
 
-        // Ambil parameter AI Qwen dari JupyterHub jika tersedia
+        // Jika parameter AI belum dikirim worker eksternal, panggil Groq Qwen API langsung dari server
+        if (($payload['ai_sentiment'] ?? null) === null && ($payload['sentimen_umum'] ?? null) === null) {
+            $payload = $this->enrichWithGroqQwen($content, $authorName, $handle, $platform, $issue->title, $payload);
+        }
+
+        // Ambil parameter AI Qwen jika tersedia
         $rawAiBotScore = $payload['ai_bot_score'] ?? $payload['skor_bot'] ?? null;
         $hasAiBotScore = $rawAiBotScore !== null && $rawAiBotScore !== '';
         $aiBotScore = $hasAiBotScore ? round(max(0.0, min(100.0, (float) $rawAiBotScore)), 1) : null;
@@ -658,4 +663,71 @@ class PostAnalyzerService
 
         return ['negative', round($conf, 1)];
     }
+
+    /**
+     * Analisis sentimen, indikasi bot, dan entitas lembaga menggunakan Groq Cloud Qwen API.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function enrichWithGroqQwen(string $content, string $authorName, string $handle, string $platform, string $issueTitle, array $payload): array
+    {
+        $apiKey = trim((string) env('GROQ_API_KEY', ''));
+        if ($apiKey === '' || $content === '') {
+            return $payload;
+        }
+
+        $model = trim((string) env('GROQ_QWEN_MODEL', 'qwen/qwen3-32b'));
+
+        $systemPrompt = 'Kamu adalah analis opini publik & deteksi bot media sosial Indonesia. '
+            . 'Balas HANYA dalam format JSON valid tanpa markdown atau teks tambahan dengan struktur persis: '
+            . '{"sentimen_umum":"Positif|Negatif|Netral","skor_bot":0-100,"alasan_bot":"string singkat bahasa Indonesia",'
+            . '"analisis_lembaga":[{"lembaga":"nama instansi/tokoh","sentimen":"Positif|Negatif|Netral","alasan":"singkat"}]}';
+
+        $userPrompt = "Isu: {$issueTitle}
+Platform: {$platform}
+Penulis: {$authorName} ({$handle})
+Teks: {$content}";
+
+        try {
+            $resp = \Illuminate\Support\Facades\Http::withToken($apiKey)
+                ->timeout(12)
+                ->post('https://api.groq.com/openai/v1/chat/completions', [
+                    'model' => $model,
+                    'temperature' => 0.1,
+                    'max_tokens' => 350,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => $systemPrompt],
+                        ['role' => 'user', 'content' => $userPrompt],
+                    ],
+                ]);
+
+            if ($resp->successful()) {
+                $rawText = (string) ($resp->json('choices.0.message.content') ?? '');
+                $rawText = preg_replace('/<think>.*?<\/think>/s', '', $rawText);
+                $parsed = json_decode(trim((string) $rawText), true);
+
+                if (is_array($parsed)) {
+                    if (! empty($parsed['sentimen_umum'])) {
+                        $payload['ai_sentiment'] = $parsed['sentimen_umum'];
+                    }
+                    if (isset($parsed['skor_bot']) && is_numeric($parsed['skor_bot'])) {
+                        $payload['ai_bot_score'] = (float) $parsed['skor_bot'];
+                    }
+                    if (! empty($parsed['alasan_bot'])) {
+                        $payload['ai_bot_reason'] = (string) $parsed['alasan_bot'];
+                    }
+                    if (! empty($parsed['analisis_lembaga']) && is_array($parsed['analisis_lembaga'])) {
+                        $payload['ai_institutions'] = $parsed['analisis_lembaga'];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fallback otomatis ke heuristik lokal jika Groq timeout/error
+        }
+
+        return $payload;
+    }
+
 }

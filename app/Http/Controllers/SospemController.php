@@ -1519,7 +1519,7 @@ class SospemController extends Controller
     /**
      * Buat antrean tugas scraping baru dari form website.
      */
-    public function createScrapeJob(Request $request): JsonResponse
+    public function createScrapeJob(Request $request, PostAnalyzerService $analyzer): JsonResponse
     {
         $validated = $request->validate([
             'topic' => 'required|string|max:150',
@@ -1548,14 +1548,52 @@ class SospemController extends Controller
             );
         }
 
+        $limit = (int) ($validated['limit'] ?? 10);
         $jobId = DB::table('scrape_jobs')->insertGetId([
             'topic' => $topic,
-            'limit' => $validated['limit'] ?? 10,
-            'status' => 'pending',
+            'limit' => $limit,
+            'status' => 'running',
             'scraped_count' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        $issue = $analyzer->resolveIssue([
+            'issue_slug' => $slug,
+            'issue_title' => $topic,
+        ]);
+
+        // 1. Coba delegasikan ke worker MacBook jika kebetulan sedang aktif
+        $delegated = false;
+        $workerUrl = env('SCRAPER_WORKER_URL', '');
+        if ($workerUrl !== '') {
+            try {
+                $resp = \Illuminate\Support\Facades\Http::withHeaders([
+                    'X-Webhook-Secret' => env('SCRAPER_WEBHOOK_SECRET', 'sospem-secret-key-2026'),
+                    'ngrok-skip-browser-warning' => 'true',
+                ])->timeout(2)->post($workerUrl, [
+                    'job_id' => $jobId,
+                    'topic' => $topic,
+                    'limit' => $limit,
+                    'issue_slug' => $slug,
+                ]);
+                if ($resp->successful()) {
+                    $delegated = true;
+                }
+            } catch (\Throwable $e) {
+                $delegated = false;
+            }
+        }
+
+        // 2. Jika worker lokal offline (atau tidak dipakai), jalankan 100% mandiri di server Hostinger
+        if (! $delegated) {
+            $scrapedCount = $this->runStandaloneHostingerScrape($topic, $slug, $limit, $issue, $analyzer);
+            DB::table('scrape_jobs')->where('id', $jobId)->update([
+                'status' => 'completed',
+                'scraped_count' => $scrapedCount,
+                'updated_at' => now(),
+            ]);
+        }
 
         return response()->json([
             'status' => 'ok',
@@ -1625,4 +1663,107 @@ class SospemController extends Controller
             'scraped_count' => (int) $job->scraped_count,
         ]);
     }
+
+    /**
+     * Mesin scraping mandiri 100% di server Hostinger (tanpa ketergantungan laptop lokal).
+     */
+    private function runStandaloneHostingerScrape(string $topic, string $slug, int $limit, $issue, PostAnalyzerService $analyzer): int
+    {
+        $inserted = 0;
+
+        // A. Tarik Berita Nasional Terbaru via Google News RSS Indonesia
+        try {
+            $rssUrl = 'https://news.google.com/rss/search?q=' . urlencode($topic . ' indonesia') . '&hl=id&gl=ID&ceid=ID:id';
+            $rssResp = \Illuminate\Support\Facades\Http::withHeaders([
+                'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
+            ])->timeout(10)->get($rssUrl);
+
+            if ($rssResp->successful()) {
+                $xml = @simplexml_load_string($rssResp->body());
+                if ($xml && isset($xml->channel->item)) {
+                    foreach ($xml->channel->item as $item) {
+                        if ($inserted >= $limit) {
+                            break;
+                        }
+                        $title = trim((string) $item->title);
+                        $link = trim((string) $item->link);
+                        $pubDate = trim((string) $item->pubDate);
+                        $source = isset($item->source) ? trim((string) $item->source) : 'Google News';
+
+                        if ($title === '') {
+                            continue;
+                        }
+
+                        $payload = [
+                            'comment_id' => 'news_' . md5($link !== '' ? $link : $title),
+                            'issue_slug' => $slug,
+                            'issue_title' => $topic,
+                            'platform' => 'news',
+                            'username' => $source,
+                            'handle' => '@' . Str::slug($source, '_'),
+                            'content' => $title,
+                            'source_news' => $link,
+                            'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate)) : now()->toDateTimeString(),
+                        ];
+
+                        $post = $analyzer->ingestAndAnalyze($issue, $payload);
+                        if ($post) {
+                            $inserted++;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Lanjut ke sumber berikutnya jika RSS gagal
+        }
+
+        // B. Tarik Diskusi & Video YouTube Terkait Topik jika kuota limit belum penuh
+        if ($inserted < $limit) {
+            try {
+                $ytRssUrl = 'https://news.google.com/rss/search?q=' . urlencode($topic . ' site:youtube.com') . '&hl=id&gl=ID&ceid=ID:id';
+                $ytResp = \Illuminate\Support\Facades\Http::withHeaders([
+                    'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
+                ])->timeout(10)->get($ytRssUrl);
+
+                if ($ytResp->successful()) {
+                    $xml = @simplexml_load_string($ytResp->body());
+                    if ($xml && isset($xml->channel->item)) {
+                        foreach ($xml->channel->item as $item) {
+                            if ($inserted >= $limit) {
+                                break;
+                            }
+                            $title = trim((string) $item->title);
+                            $link = trim((string) $item->link);
+                            $pubDate = trim((string) $item->pubDate);
+                            if ($title === '') {
+                                continue;
+                            }
+
+                            $payload = [
+                                'comment_id' => 'yt_' . md5($link !== '' ? $link : $title),
+                                'issue_slug' => $slug,
+                                'issue_title' => $topic,
+                                'platform' => 'youtube',
+                                'username' => 'YouTube Public Channel',
+                                'handle' => '@youtube_id',
+                                'content' => $title,
+                                'source_news' => $link,
+                                'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate)) : now()->toDateTimeString(),
+                            ];
+
+                            $post = $analyzer->ingestAndAnalyze($issue, $payload);
+                            if ($post) {
+                                $inserted++;
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Abaikan jika gagal
+            }
+        }
+
+        return $inserted;
+    }
+
 }
