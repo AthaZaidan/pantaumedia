@@ -121,8 +121,14 @@ class SospemController extends Controller
     /**
      * Dashboard utama: KPI, Tren Periode (24j, 7h, 30h) & Matriks isu x platform murni dari PostgreSQL.
      */
-    public function dashboard(): View
+    public function dashboard(PostAnalyzerService $analyzer): View
     {
+        Cache::remember('sospem_posts_repaired_v1', now()->addHours(6), function () use ($analyzer): bool {
+            $analyzer->repairMisclassifiedPosts();
+
+            return true;
+        });
+
         return view('dashboard', [
             'kpi' => $this->buildKpiStats(),
             'periodTrends' => $this->buildPeriodTrends(),
@@ -247,10 +253,13 @@ class SospemController extends Controller
     /**
      * Halaman feed split-screen (Kiri: Orang/Warga Organik, Kanan: Jaringan Bot) dari PostgreSQL.
      */
-    public function feed(Request $request, string $issueSlug, string $platform): View
+    public function feed(Request $request, string $issueSlug, string $platform, PostAnalyzerService $analyzer): View
     {
         $issueModel = Issue::where('slug', $issueSlug)->first()
             ?? Issue::orderBy('rank')->firstOrFail();
+
+        $analyzer->repairMisclassifiedPosts($issueModel->id);
+        $issueModel->refresh();
 
         $issue = $this->formatIssueForView($issueModel);
         $platformKey = strtolower($platform);
@@ -726,8 +735,14 @@ class SospemController extends Controller
     /**
      * Halaman Grafik Deret Waktu & Analitik (100% dihitung dari tabel PostgreSQL).
      */
-    public function analytics(Request $request): View
+    public function analytics(Request $request, PostAnalyzerService $analyzer): View
     {
+        Cache::remember('sospem_posts_repaired_v1', now()->addHours(6), function () use ($analyzer): bool {
+            $analyzer->repairMisclassifiedPosts();
+
+            return true;
+        });
+
         $selectedSlug = (string) $request->query('issue', 'all');
         $selectedIssue = $selectedSlug !== 'all'
             ? Issue::where('slug', $selectedSlug)->first()

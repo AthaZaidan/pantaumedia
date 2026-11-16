@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Issue;
 use App\Models\MonitoredAccount;
+use App\Models\SocialPost;
 use App\Models\User;
 use App\Services\ChatbotAssistantService;
+use App\Services\PostAnalyzerService;
 use Database\Seeders\SospemDatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -613,5 +615,106 @@ XML;
         ])->assertStatus(200)->json('reply');
         $this->assertStringContainsString('bukan menteri', strtolower($budiWhyReply));
         $this->assertStringNotContainsString('Mahendra Siregar', $budiWhyReply);
+    }
+
+    public function test_sentiment_guardrails_catch_sarcasm_and_repair_misclassified_posts(): void
+    {
+        $this->seed(SospemDatabaseSeeder::class);
+
+        $first = $this->postJson('/api/ingest', [
+            'issue_slug' => 'makan-bergizi-gratis',
+            'platform' => 'youtube',
+            'author_name' => 'rinitutur6495',
+            'author_handle' => '@rinitutur6495',
+            'content' => 'Katanya menteri yg sekarang bisa mengatasi dan aman. Klu memang belum bisa yah sudah ditutup',
+            'ai_sentiment' => 'Netral',
+            'ai_institutions' => [
+                ['lembaga' => 'Menteri', 'sentimen' => 'Netral', 'alasan' => 'Disebut dalam komentar'],
+            ],
+        ])->assertStatus(200);
+
+        $first->assertJsonPath('post.sentiment', 'negative');
+
+        $second = $this->postJson('/api/ingest', [
+            'issue_slug' => 'makan-bergizi-gratis',
+            'platform' => 'youtube',
+            'author_name' => 'MiliGendut',
+            'author_handle' => '@MiliGendut',
+            'content' => 'Apakah pak menteri sebagai salah satu pihak penerima manfaat program mbg yg sebenarnya??',
+            'ai_sentiment' => 'Positif',
+        ])->assertStatus(200);
+
+        $second->assertJsonPath('post.sentiment', 'negative');
+
+        $third = $this->postJson('/api/ingest', [
+            'issue_slug' => 'makan-bergizi-gratis',
+            'platform' => 'youtube',
+            'author_name' => 'AniYudoyono-s4s',
+            'author_handle' => '@AniYudoyono-s4s',
+            'content' => 'Jangan mau bayar pajak bodoh',
+            'ai_sentiment' => 'Positif',
+            'ai_institutions' => [
+                ['lembaga' => 'Pemerintah Pusat', 'sentimen' => 'Positif', 'alasan' => 'Terkait anggaran'],
+            ],
+        ])->assertStatus(200);
+
+        $third->assertJsonPath('post.sentiment', 'negative');
+        $thirdPost = SocialPost::find($third->json('post.id'));
+        $this->assertNotNull($thirdPost);
+        $this->assertSame('Negatif', $thirdPost->metadata['ai_institutions'][0]['sentimen'] ?? null);
+        $this->assertGreaterThan(0.0, (float) $thirdPost->bot_score);
+
+        // Uji repairMisclassifiedPosts() mengoreksi data lama yang salah label di DB
+        $issue = Issue::where('slug', 'makan-bergizi-gratis')->firstOrFail();
+        $account = MonitoredAccount::firstOrCreate(
+            ['handle' => '@legacy_broken'],
+            [
+                'name' => 'Legacy Broken',
+                'platform' => 'TikTok & YouTube',
+                'age' => '2 tahun',
+                'followers' => 500,
+                'following' => 200,
+                'posting_frequency' => '3 postingan / hari',
+                'is_bot' => false,
+                'bot_score' => 0.0,
+                'reasons' => ['Komentar sederhana'],
+                'topics' => [$issue->title],
+                'cluster' => [],
+            ]
+        );
+
+        $brokenPost = SocialPost::create([
+            'issue_id' => $issue->id,
+            'monitored_account_id' => $account->id,
+            'platform' => 'tiktok',
+            'author_name' => 'Legacy Broken',
+            'author_handle' => '@legacy_broken',
+            'content' => 'Jangan mau bayar pajak bodoh',
+            'is_bot' => false,
+            'bot_score' => 0.0,
+            'sentiment' => 'positive',
+            'sentiment_conf' => 95.4,
+            'likes' => 0,
+            'reposts' => 0,
+            'post_url' => 'https://youtube.com/watch?v=broken',
+            'posted_at' => now(),
+            'metadata' => [
+                'ai_sentiment_raw' => 'neutral',
+                'ai_institutions' => [
+                    ['lembaga' => 'Menteri', 'sentimen' => 'Netral', 'alasan' => 'Lama'],
+                ],
+            ],
+        ]);
+
+        app(PostAnalyzerService::class)->repairMisclassifiedPosts($issue->id);
+
+        $repaired = $brokenPost->fresh();
+        $this->assertNotNull($repaired);
+        $this->assertSame('negative', $repaired->sentiment);
+        $this->assertGreaterThan(0.0, (float) $repaired->bot_score);
+        $this->assertLessThan(60.0, (float) $repaired->bot_score);
+        $this->assertNotEquals(95.4, (float) $repaired->sentiment_conf);
+        $this->assertSame('Kementerian Terkait', $repaired->metadata['ai_institutions'][0]['lembaga'] ?? null);
+        $this->assertSame('Negatif', $repaired->metadata['ai_institutions'][0]['sentimen'] ?? null);
     }
 }
