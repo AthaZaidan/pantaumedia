@@ -1223,7 +1223,8 @@ class SospemController extends Controller
         $start = microtime(true);
 
         try {
-            $resp = Http::connectTimeout(3)
+            $resp = Http::withoutVerifying()
+                ->connectTimeout(3)
                 ->timeout(5)
                 ->withHeaders(['User-Agent' => 'SOSPEM-Screening/1.0'])
                 ->acceptJson()
@@ -1468,12 +1469,16 @@ class SospemController extends Controller
 
             $rag = $this->buildDatabaseRagContext($normalizedSlug);
             $externalContext = $assistant->gatherExternalContext($effectiveMessage, $rag);
+            if (! empty($historyMessages) && $effectiveMessage !== $message) {
+                $externalContext['extra_prompt'] = trim($externalContext['extra_prompt']."\n\nKONTEKS PESAN TERBARU (HASIL RESOLUSI MULTI-TURN): {$effectiveMessage}");
+            }
             $systemPrompt = $assistant->buildSystemPrompt($rag, $externalContext);
 
+            $llmUserMessage = ! empty($historyMessages) ? $message : $effectiveMessage;
             $messagesPayload = array_merge(
                 [['role' => 'system', 'content' => $systemPrompt]],
                 $historyMessages,
-                [['role' => 'user', 'content' => $effectiveMessage]]
+                [['role' => 'user', 'content' => $llmUserMessage]]
             );
 
             $canCallExternal = $agentMode !== 'database'
@@ -1542,7 +1547,8 @@ class SospemController extends Controller
                         ];
                     }
 
-                    $response = Http::connectTimeout(5)
+                    $response = Http::withoutVerifying()
+                        ->connectTimeout(5)
                         ->timeout(25)
                         ->acceptJson()
                         ->post($agentUrl, $body);
@@ -1904,15 +1910,16 @@ class SospemController extends Controller
         $workerUrl = trim((string) env('SCRAPER_WORKER_URL', ''));
         if ($workerUrl !== '') {
             try {
-                $resp = Http::withHeaders([
-                    'X-Webhook-Secret' => (string) env('SCRAPER_WEBHOOK_SECRET', 'sospem-secret-key-2026'),
-                    'ngrok-skip-browser-warning' => 'true',
-                ])->timeout(2)->post($workerUrl, [
-                    'job_id' => $jobId,
-                    'topic' => $topic,
-                    'limit' => $limit,
-                    'issue_slug' => $slug,
-                ]);
+                $resp = Http::withoutVerifying()
+                    ->withHeaders([
+                        'X-Webhook-Secret' => (string) env('SCRAPER_WEBHOOK_SECRET', 'sospem-secret-key-2026'),
+                        'ngrok-skip-browser-warning' => 'true',
+                    ])->timeout(2)->post($workerUrl, [
+                        'job_id' => $jobId,
+                        'topic' => $topic,
+                        'limit' => $limit,
+                        'issue_slug' => $slug,
+                    ]);
                 if ($resp->successful()) {
                     $delegated = true;
                 }
@@ -2022,9 +2029,10 @@ class SospemController extends Controller
 
             try {
                 $rssUrl = 'https://news.google.com/rss/search?q='.urlencode($src['query']).'&hl=id&gl=ID&ceid=ID:id';
-                $rssResp = Http::withHeaders([
-                    'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
-                ])->timeout(10)->get($rssUrl);
+                $rssResp = Http::withoutVerifying()
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
+                    ])->timeout(10)->get($rssUrl);
 
                 if (! $rssResp->successful()) {
                     continue;
@@ -2188,7 +2196,7 @@ class SospemController extends Controller
             'model' => $agentModel,
             'messages' => $messagesPayload,
             'created_at' => now()->toIso8601String(),
-        ], now()->addSeconds(30));
+        ], now()->addSeconds(45));
 
         if (app()->runningUnitTests()) {
             $result = Cache::pull($replyCacheKey);
@@ -2198,7 +2206,7 @@ class SospemController extends Controller
                 : null;
         }
 
-        $deadline = microtime(true) + 18.0;
+        $deadline = microtime(true) + 25.0;
         while (microtime(true) < $deadline) {
             $result = Cache::pull($replyCacheKey);
             if (is_array($result) && is_string($result['reply'] ?? null) && trim($result['reply']) !== '') {

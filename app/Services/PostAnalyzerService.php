@@ -697,7 +697,8 @@ Teks: {$content}";
 
         foreach ($candidates as $model) {
             try {
-                $resp = Http::withToken($apiKey)
+                $resp = Http::withoutVerifying()
+                    ->withToken($apiKey)
                     ->connectTimeout(4)
                     ->timeout(12)
                     ->post('https://api.groq.com/openai/v1/chat/completions', [

@@ -4,16 +4,29 @@
 
 @section('styles')
 <style>
-    .chatbot-shell {
-        background: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-card);
-        display: flex;
-        height: calc(100vh - 84px);
-        min-height: 560px;
-        width: 100%;
+    /* Full-bleed layout halaman chat menyatu dengan canvas tanpa kotak di tengah */
+    .main-workspace {
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100vh;
+        height: 100dvh;
         overflow: hidden;
+        gap: 0 !important;
+    }
+
+    .chatbot-shell {
+        background: var(--color-canvas);
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        display: flex;
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
     }
 
     /* Sidebar Riwayat Chat di sebelah kiri area chat */
@@ -26,6 +39,41 @@
         flex-direction: column;
         padding: 14px 12px;
         gap: 12px;
+        min-height: 0;
+    }
+
+    .chat-history-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .chat-drawer-close-btn {
+        display: none;
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        color: var(--color-text-primary);
+        font-size: 18px;
+        line-height: 1;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    .chat-history-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(2px);
+        z-index: 1070;
+    }
+    .chat-history-backdrop.is-open {
+        display: block;
     }
 
     .new-chat-btn {
@@ -61,7 +109,9 @@
 
     .chat-history-list {
         flex: 1;
+        min-height: 0;
         overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
         display: flex;
         flex-direction: column;
         gap: 4px;
@@ -138,16 +188,33 @@
     .chat-main-panel {
         flex: 1;
         min-width: 0;
+        min-height: 0;
+        height: 100%;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
         background: var(--color-canvas);
+    }
+
+    .chat-mobile-bar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface-subtle);
+        flex-shrink: 0;
     }
 
     .chat-empty-state {
         flex: 1;
+        min-height: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 8px;
         padding: 24px;
         background: var(--color-canvas);
     }
@@ -162,11 +229,14 @@
 
     .chat-messages-scroll {
         flex: 1;
+        min-height: 0;
         overflow-y: auto;
-        padding: 22px 24px;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        padding: 24px 28px;
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 16px;
         background: var(--color-canvas);
     }
 
@@ -174,7 +244,7 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
-        max-width: 82%;
+        max-width: min(82%, 780px);
     }
 
     .chat-bubble-row.is-user {
@@ -199,7 +269,7 @@
         padding: 12px 16px;
         border-radius: var(--radius-md);
         font-size: 13.5px;
-        line-height: 1.55;
+        line-height: 1.6;
         white-space: pre-wrap;
         word-break: break-word;
     }
@@ -223,7 +293,8 @@
     }
 
     .chat-input-bar {
-        padding: 14px 20px;
+        flex-shrink: 0;
+        padding: 14px 28px;
         border-top: 1px solid var(--color-border);
         background: var(--color-surface);
         display: flex;
@@ -234,7 +305,7 @@
     .chat-textarea {
         flex: 1;
         padding: 10px 14px;
-        font-size: 13px;
+        font-size: 13.5px;
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
         background: var(--color-surface-subtle);
@@ -251,35 +322,91 @@
     }
 
     @media (max-width: 768px) {
-        .chatbot-shell {
-            flex-direction: column;
-            height: calc(100vh - 52px);
+        .mobile-topbar {
+            border-radius: 0 !important;
+            border-left: none !important;
+            border-right: none !important;
+            border-top: none !important;
+            flex-shrink: 0;
+        }
+
+        .chat-mobile-bar {
+            display: flex;
+        }
+
+        .chat-drawer-close-btn {
+            display: inline-flex;
         }
 
         .chat-history-sidebar {
-            width: 100%;
-            max-height: 170px;
-            border-right: none;
-            border-bottom: 1px solid var(--color-border);
-            padding: 10px 12px;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 270px;
+            max-width: 82vw;
+            max-height: none;
+            border-right: 1px solid var(--color-border);
+            border-bottom: none;
+            padding: 14px 12px;
+            z-index: 1080;
+            transform: translateX(-100%);
+            transition: transform 0.2s ease;
+            box-shadow: 0 20px 44px rgba(0, 0, 0, 0.45);
+        }
+
+        .chat-history-sidebar.is-drawer-open {
+            transform: translateX(0);
+        }
+
+        .chat-history-delete {
+            opacity: 1;
+        }
+
+        .chat-messages-scroll {
+            padding: 16px 14px;
+            gap: 14px;
         }
 
         .chat-bubble-row {
             max-width: 92%;
+        }
+
+        .chat-input-bar {
+            padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+        }
+
+        .chat-textarea {
+            font-size: 14px;
         }
     }
 </style>
 @endsection
 
 @section('content')
+    <div class="chat-history-backdrop" id="chatHistoryBackdrop" onclick="closeChatHistoryDrawer()"></div>
+
     <section class="chatbot-shell">
-        <aside class="chat-history-sidebar" aria-label="Riwayat Chat">
-            <button type="button" id="newChatBtn" class="new-chat-btn" onclick="createNewChat()">+ Chat Baru</button>
+        <aside class="chat-history-sidebar" id="chatHistorySidebar" aria-label="Riwayat Chat">
+            <div class="chat-history-top">
+                <button type="button" id="newChatBtn" class="new-chat-btn" onclick="createNewChat()">+ Chat Baru</button>
+                <button type="button" class="chat-drawer-close-btn" onclick="closeChatHistoryDrawer()" aria-label="Tutup Riwayat Chat">&times;</button>
+            </div>
             <div class="chat-history-heading">Riwayat Chat</div>
             <div class="chat-history-list" id="chatHistoryList"></div>
         </aside>
 
         <div class="chat-main-panel">
+            <div class="chat-mobile-bar">
+                <button type="button" class="btn-clean" onclick="toggleChatHistoryDrawer()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Riwayat Chat
+                </button>
+                <button type="button" class="btn-clean btn-primary" onclick="createNewChat()">+ Chat Baru</button>
+            </div>
+
             <div id="chatEmptyState" class="chat-empty-state">
                 <h1 class="chat-empty-title">Halo</h1>
             </div>
@@ -287,8 +414,8 @@
             <div class="chat-messages-scroll" id="chatMessages" style="display: none;"></div>
 
             <form class="chat-input-bar" onsubmit="handleChatSubmit(event)">
-                <textarea id="chatInput" class="chat-textarea" rows="1" placeholder="Ketik pesan..." onkeydown="handleTextareaKey(event)" required></textarea>
-                <button type="submit" id="chatSendBtn" class="btn-clean btn-primary" style="height: 44px; padding: 0 18px;">Kirim</button>
+                <textarea id="chatInput" class="chat-textarea" rows="1" placeholder="Ketik pesan..." oninput="autoResizeTextarea(this)" onkeydown="handleTextareaKey(event)" required></textarea>
+                <button type="submit" id="chatSendBtn" class="btn-clean btn-primary" style="height: 44px; padding: 0 18px; flex-shrink: 0;">Kirim</button>
             </form>
         </div>
     </section>
@@ -368,6 +495,28 @@
         return sessions.find(s => s.id === activeSessionId) || null;
     }
 
+    function toggleChatHistoryDrawer() {
+        const sidebar = document.getElementById('chatHistorySidebar');
+        const backdrop = document.getElementById('chatHistoryBackdrop');
+        if (!sidebar || !backdrop) return;
+        const willOpen = !sidebar.classList.contains('is-drawer-open');
+        sidebar.classList.toggle('is-drawer-open', willOpen);
+        backdrop.classList.toggle('is-open', willOpen);
+    }
+
+    function closeChatHistoryDrawer() {
+        const sidebar = document.getElementById('chatHistorySidebar');
+        const backdrop = document.getElementById('chatHistoryBackdrop');
+        if (sidebar) sidebar.classList.remove('is-drawer-open');
+        if (backdrop) backdrop.classList.remove('is-open');
+    }
+
+    function autoResizeTextarea(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
     function createNewChat() {
         const existingEmpty = sessions.find(s => s.messages.length === 0);
         if (existingEmpty) {
@@ -385,6 +534,7 @@
         }
         renderSidebarHistory();
         renderActiveChat();
+        closeChatHistoryDrawer();
         document.getElementById('chatInput').focus();
     }
 
@@ -392,6 +542,7 @@
         activeSessionId = sessionId;
         renderSidebarHistory();
         renderActiveChat();
+        closeChatHistoryDrawer();
         document.getElementById('chatInput').focus();
     }
 
@@ -524,6 +675,7 @@
         const text = input.value.trim();
         if (!text) return;
         input.value = '';
+        input.style.height = 'auto';
         submitQuestion(text);
     }
 
@@ -548,7 +700,7 @@
         sendBtn.disabled = true;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
 
         // Ambil 6 pesan terakhir sebelumnya sebagai konteks percakapan
         const historyPayload = session.messages
@@ -607,7 +759,7 @@
             loadingRow.remove();
             const replyTime = getCurrentTimeLabel();
             const message = err && err.name === 'AbortError'
-                ? 'Waktu tunggu habis (lebih dari 30 detik). Silakan kirim ulang pertanyaan Anda.'
+                ? 'Waktu tunggu habis (lebih dari 45 detik). Silakan kirim ulang pertanyaan Anda.'
                 : 'Tidak dapat terhubung ke server. Periksa apakah server lokal masih aktif lalu coba lagi.';
             session.messages.push({ role: 'assistant', content: message, time: replyTime, isError: true });
             saveSessionsToStorage();

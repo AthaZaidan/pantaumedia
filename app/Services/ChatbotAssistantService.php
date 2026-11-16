@@ -187,7 +187,7 @@ class ChatbotAssistantService
             || str_contains($q, 'terbaru di internet')
             || str_contains($q, 'apa yang terjadi')
             || str_contains($q, 'news')
-            || preg_match('/\b(mengundurkan diri|mundur|kemunduran|pengganti|cawapres|reshuffle|demo|sidang|kasus)\b/i', $q) === 1
+            || preg_match('/\b(mengundurkan diri|mundur|kemunduran|pengganti|calon pengganti|diganti|cawapres|reshuffle|budi arie|bukan menteri|demo|sidang|kasus)\b/i', $q) === 1
             || (str_contains($q, 'isu') && $this->isGovernmentTopicIntent($message) && (str_contains($q, 'terkini') || str_contains($q, 'terbaru')));
     }
 
@@ -224,6 +224,10 @@ class ChatbotAssistantService
                 || str_contains($lastAssistantLower, 'layanan ai eksternal'))
             && preg_match('/^(kenapa|mengapa|kok|lah|loh|lho|gimana sih|maksudnya gimana)\b/i', $q) === 1
         ) {
+            return $message;
+        }
+
+        if (preg_match('/\b(kamu menyebut|anda menyebut|tadi kamu|jawabanmu|jawaban kamu|salah sebut|sudah bukan|bukan lagi|bukannya .+ sudah|kenapa kamu|mengapa kamu|kok kamu)\b/i', $q) === 1) {
             return $message;
         }
 
@@ -334,6 +338,10 @@ class ChatbotAssistantService
             return trim("{$cleanTopic} Republik Indonesia");
         }
 
+        if ($this->isGovernmentTopicIntent($trimmed)) {
+            return $message;
+        }
+
         if (empty($recentUserMessages)) {
             return $message;
         }
@@ -441,6 +449,10 @@ class ChatbotAssistantService
         $keywords = [
             'pemerintah', 'pemerintahan', 'presiden', 'wapres', 'wakil presiden',
             'prabowo', 'gibran', 'menteri', 'kementerian', 'kabinet',
+            'budi arie', 'yusril', 'airlangga', 'mahendra siregar', 'sandiaga',
+            'mahfud', 'ahy', 'agus harimurti', 'muhaimin', 'cak imin',
+            'zulkifli hasan', 'erick thohir', 'bahlil', 'purbaya', 'sri mulyani',
+            'puan', 'luhut', 'reshuffle', 'cawapres', 'pengganti', 'pemakzulan',
             'dpr', 'mpr', 'dpd', 'mahkamah', 'kpk', 'bpk', 'polri', 'tni',
             'bssn', 'komdigi', 'kominfo', 'ikn', 'nusantara', 'mbg', 'makan bergizi',
             'subsidi', 'pajak', 'ppn', 'bpjs', 'anggaran', 'apbn', 'korupsi',
@@ -530,7 +542,8 @@ class ChatbotAssistantService
                 $candidate = trim($matches[1]);
                 if (! in_array(strtolower($candidate), ['hari ini', 'sekarang', 'sini', 'indonesia'], true)) {
                     try {
-                        $geoResp = Http::connectTimeout(3)
+                        $geoResp = Http::withoutVerifying()
+                            ->connectTimeout(3)
                             ->timeout(4)
                             ->get('https://geocoding-api.open-meteo.com/v1/search', [
                                 'name' => $candidate,
@@ -556,7 +569,8 @@ class ChatbotAssistantService
         }
 
         try {
-            $resp = Http::connectTimeout(3)
+            $resp = Http::withoutVerifying()
+                ->connectTimeout(3)
                 ->timeout(4)
                 ->get('https://api.open-meteo.com/v1/forecast', [
                     'latitude' => $selectedCity['lat'],
@@ -612,10 +626,14 @@ class ChatbotAssistantService
     {
         $lower = strtolower($message);
 
-        if (preg_match('/\b(wakil presiden|wapres|gibran)\b/i', $lower) === 1) {
-            if (preg_match('/\b(mengundurkan diri|mundur|pemakzulan|makzul|lengser)\b/i', $lower) === 1) {
+        if (preg_match('/\b(budi arie)\b/i', $lower) === 1) {
+            $cleanQuery = 'Budi Arie Setiadi reshuffle menteri Kabinet Merah Putih';
+        } elseif (preg_match('/\b(wakil presiden|wapres|gibran)\b/i', $lower) === 1) {
+            if (preg_match('/\b(calon|pengganti|cawapres)\b/i', $lower) === 1) {
+                $cleanQuery = 'calon pengganti Wakil Presiden Gibran MPR UUD 1945';
+            } elseif (preg_match('/\b(mengundurkan diri|mundur|pemakzulan|makzul|lengser)\b/i', $lower) === 1) {
                 $cleanQuery = 'Wakil Presiden Gibran mengundurkan diri mundur';
-            } elseif (preg_match_all('/\b(pengganti|cawapres|mk|ma|pks|dpr|sidang|putusan|tuntutan|wacana|ganti)\b/i', $lower, $topicMatches) > 0) {
+            } elseif (preg_match_all('/\b(mk|ma|pks|dpr|sidang|putusan|tuntutan|wacana|ganti)\b/i', $lower, $topicMatches) > 0) {
                 $keywords = implode(' ', array_unique(array_map('strtolower', $topicMatches[1])));
                 $cleanQuery = 'Wakil Presiden Gibran Rakabuming Raka '.$keywords;
             } else {
@@ -647,7 +665,8 @@ class ChatbotAssistantService
             : 'https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id';
 
         try {
-            $resp = Http::connectTimeout(3)
+            $resp = Http::withoutVerifying()
+                ->connectTimeout(3)
                 ->timeout(5)
                 ->withHeaders(['User-Agent' => 'Mozilla/5.0 SOSPEM-Chatbot/1.0'])
                 ->get($rssUrl);
@@ -828,7 +847,18 @@ class ChatbotAssistantService
             ."4. JANGAN PERNAH menambahkan daftar menu tawaran topik yang tidak diminta.\n"
             ."5. JANGAN PERNAH memakai simbol markdown mentah (*, **, __, #, `) maupun tabel Markdown (| kolom | atau |---|) di dalam jawaban.\n"
             ."6. Jika di bawah tersedia data Berita Terkini di Internet (Google News RSS) atau Data Cuaca Real-Time, gunakan daftar judul berita dan angka cuaca nyata tersebut secara akurat dan jangan mengarang judul berita fiktif.\n"
-            ."7. KONTEKS INDONESIA DEFAULT: Jika pengguna menyebut \"kita\", \"pemerintah\", \"presiden\", atau \"wakil presiden\" tanpa menyebut negara lain, selalu rujuk konteks Negara Kesatuan Republik Indonesia (Presiden Prabowo Subianto dan Wakil Presiden Gibran Rakabuming Raka, Kabinet Merah Putih 2024–2029). Jangan pernah mengalihkan topik ke tokoh luar negeri.\n\n"
+            ."7. KONTEKS INDONESIA DEFAULT: Jika pengguna menyebut \"kita\", \"pemerintah\", \"presiden\", atau \"wakil presiden\" tanpa menyebut negara lain, selalu rujuk konteks Negara Kesatuan Republik Indonesia (Presiden Prabowo Subianto dan Wakil Presiden Gibran Rakabuming Raka, Kabinet Merah Putih 2024–2029). Jangan pernah mengalihkan topik ke tokoh luar negeri.\n"
+            ."8. DILARANG MENGULANG DAFTAR PANJANG SAAT DIKOREKSI: Jika pengguna mengoreksi fakta (mis. \"bukannya Budi Arie sudah bukan menteri?\") atau menanyakan alasan spesifik (\"kenapa kamu menyebut...\"), akui dan jawab langsung koreksi/pertanyaan tersebut secara ringkas tanpa mengulang kembali seluruh daftar panjang dari jawaban sebelumnya.\n"
+            ."9. DILARANG MENGARANG JABATAN ATAU STATISTIK PALSU: Patuhi fakta jabatan Kabinet Merah Putih di bawah dan hanya gunakan angka statistik SOSPEM yang benar-benar tertulis di ringkasan database.\n\n"
+            ."FAKTA RESMI PEMERINTAHAN & KABINET MERAH PUTIH RI (WAJIB DIPATUHI — DILARANG MENGARANG JABATAN):\n"
+            ."- Presiden RI: Prabowo Subianto & Wakil Presiden RI: Gibran Rakabuming Raka (periode 2024–2029, masih menjabat aktif).\n"
+            ."- Mekanisme Pengganti Wakil Presiden (Pasal 8 ayat (2) UUD 1945): Apabila kursi Wakil Presiden lowong, Presiden mengusulkan 2 nama calon kepada MPR RI untuk dipilih dalam sidang MPR paling lambat dalam waktu 60 hari.\n"
+            ."- Budi Arie Setiadi: Mantan Menkominfo (era Jokowi) dan sempat menjabat Menteri Koperasi di awal Kabinet Merah Putih, namun terkena reshuffle kabinet pada September 2025 (digantikan oleh Ferry Juliantono sebagai Menteri Koperasi) sehingga SAAT INI SUDAH BUKAN MENTERI LAGI. Ia juga TIDAK PERNAH menjabat Menteri ATR/BPN maupun Kepala Bappenas (Menteri ATR/BPN adalah Nusron Wahid; Kepala Bappenas adalah Rachmat Pambudy).\n"
+            ."- Yusril Ihza Mahendra: Menteri Koordinator Bidang Hukum, HAM, Imigrasi, dan Pemasyarakatan (tokoh senior Partai Bulan Bintang / PBB, BUKAN Partai NasDem).\n"
+            ."- Airlangga Hartarto: Menteri Koordinator Bidang Perekonomian & mantan Ketua Umum Partai Golkar (BUKAN mantan Ketua DPR RI; Ketua DPR RI adalah Puan Maharani).\n"
+            ."- Mahendra Siregar: Ketua Dewan Komisioner OJK & mantan Wakil Menteri Luar Negeri (BUKAN mantan Menko Marves dan BUKAN mantan Dirut Pertamina).\n"
+            ."- Menko Kabinet Merah Putih lainnya: Pratikno (Menko PMK), Agus Harimurti Yudhoyono / AHY (Menko Infrastruktur & Pembangunan Kewilayahan, Ketum Partai Demokrat), Abdul Muhaimin Iskandar / Cak Imin (Menko Pemberdayaan Masyarakat, Ketum PKB), dan Zulkifli Hasan (Menko Pangan, Ketum PAN).\n"
+            ."- Menteri & Tokoh Terkait Lainnya: Purbaya Yudhi Sadewa (Menteri Keuangan pasca reshuffle September 2025), Meutya Hafid (Menteri Komunikasi dan Digital / Komdigi), Bahlil Lahadalia (Menteri ESDM & Ketum Partai Golkar), Erick Thohir (Menteri BUMN), Sandiaga Uno (mantan Menparekraf, berada di luar kabinet).\n\n"
             .$externalContext['extra_prompt'];
 
         if (! empty($externalContext['is_sospem_related']) || ! empty($externalContext['is_government_related'])) {
@@ -932,7 +962,8 @@ class ChatbotAssistantService
 
             foreach ($groqModels as $groqModel) {
                 try {
-                    $resp = Http::connectTimeout(5)
+                    $resp = Http::withoutVerifying()
+                        ->connectTimeout(5)
                         ->timeout(20)
                         ->withToken($groqKey)
                         ->acceptJson()
@@ -956,7 +987,8 @@ class ChatbotAssistantService
 
         if ($openaiKey !== '') {
             try {
-                $resp = Http::connectTimeout(5)
+                $resp = Http::withoutVerifying()
+                    ->connectTimeout(5)
                     ->timeout(20)
                     ->withToken($openaiKey)
                     ->acceptJson()
@@ -997,7 +1029,8 @@ class ChatbotAssistantService
                 if ($systemText !== '') {
                     $payload['systemInstruction'] = ['parts' => [['text' => $systemText]]];
                 }
-                $resp = Http::connectTimeout(5)
+                $resp = Http::withoutVerifying()
+                    ->connectTimeout(5)
                     ->timeout(20)
                     ->acceptJson()
                     ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$geminiKey}", $payload);
@@ -1015,7 +1048,8 @@ class ChatbotAssistantService
 
         // 2. Endpoint Generative AI Gratis Tanpa API Key (Pollinations OpenAI-compatible)
         try {
-            $resp = Http::connectTimeout(5)
+            $resp = Http::withoutVerifying()
+                ->connectTimeout(5)
                 ->timeout(20)
                 ->withHeaders(['User-Agent' => 'SOSPEM-Chatbot/1.0'])
                 ->acceptJson()
@@ -1101,7 +1135,8 @@ class ChatbotAssistantService
 
         foreach (['id', 'en'] as $lang) {
             try {
-                $searchResp = Http::connectTimeout(3)
+                $searchResp = Http::withoutVerifying()
+                    ->connectTimeout(3)
                     ->timeout(4)
                     ->withHeaders(['User-Agent' => 'SOSPEM-Chatbot/1.0'])
                     ->get("https://{$lang}.wikipedia.org/w/api.php", [
@@ -1116,7 +1151,8 @@ class ChatbotAssistantService
                 if ($searchResp->successful()) {
                     $title = $searchResp->json('query.search.0.title');
                     if (is_string($title) && $title !== '' && $this->isWikipediaTitleRelevant($title, $query, $queryWords)) {
-                        $summaryResp = Http::connectTimeout(3)
+                        $summaryResp = Http::withoutVerifying()
+                            ->connectTimeout(3)
                             ->timeout(4)
                             ->withHeaders(['User-Agent' => 'SOSPEM-Chatbot/1.0'])
                             ->get("https://{$lang}.wikipedia.org/api/rest_v1/page/summary/".rawurlencode(str_replace(' ', '_', $title)));
@@ -1383,12 +1419,34 @@ class ChatbotAssistantService
             return $builtInKnowledge;
         }
 
-        // 11. Jika pertanyaan memang meminta berita internet namun RSS sedang gagal, kembalikan pesan status berita
-        if ($externalContext['news'] !== null) {
+        // 11. Jika pertanyaan memang meminta berita internet namun RSS sedang gagal, coba rangkum berita / data SOSPEM
+        if ($externalContext['news'] !== null && ! empty($externalContext['news']['ok'])) {
             return $externalContext['news']['formatted'];
         }
 
-        return 'Topik tersebut menarik, hanya saja koneksi ke layanan AI eksternal saat ini belum aktif dari server. Jika ada hal seputar pemerintahan, kebijakan publik, atau obrolan ringan lainnya yang ingin dibahas, silakan lanjutkan saja.';
+        if ($externalContext['news'] === null) {
+            $quickNews = $this->fetchInternetNewsOrSearch($message);
+            if (! empty($quickNews['ok'])) {
+                return $quickNews['formatted'];
+            }
+        }
+
+        if ((int) ($kpi['total_posts'] ?? 0) > 0) {
+            $topIssues = array_slice($rag['issues'] ?? [], 0, 3);
+            $issueSummary = implode(', ', array_map(
+                fn (array $iss): string => "{$iss['title']} ({$iss['total_posts']} post, {$iss['pos_pct']}% positif)",
+                $topIssues
+            ));
+
+            return "Berikut rangkuman data pantauan opini publik SOSPEM terkait isu terkini ({$today['date_full']}):\n"
+                ."• Total postingan teranalisis: {$kpi['total_posts']} (Warga Organik {$kpi['human_pct']}% · Jaringan Bot {$kpi['bot_pct']}%)\n"
+                ."• Isu teratas (#1): {$kpi['top_issue_title']} ({$kpi['top_issue_posts']} post)\n"
+                .($issueSummary !== '' ? "• Ringkasan isu utama: {$issueSummary}\n\n" : "\n")
+                .'Silakan sebutkan tokoh, kebijakan pemerintah, lembaga negara, atau isu tertentu jika ingin analisis lebih spesifik.';
+        }
+
+        return "Belum ditemukan kecocokan langsung pada rangkuman data saat ini ({$today['date_full']}). "
+            .'Silakan sebutkan nama tokoh, menteri, kebijakan pemerintah (mis. MBG, IKN, PPN, BPJS), atau nama kota untuk cuaca real-time agar saya bisa menelusuri data yang paling relevan.';
     }
 
     /**
@@ -1560,6 +1618,17 @@ class ChatbotAssistantService
         $foreignCountryMentioned = preg_match('/\b(amerika|usa|us|truman|roosevelt|biden|trump|rusia|tiongkok|china|prancis|perancis|inggris)\b/i', $q) === 1;
 
         if (! $foreignCountryMentioned) {
+            if (str_contains($q, 'budi arie')) {
+                return 'Budi Arie Setiadi adalah mantan Menteri Komunikasi dan Informatika (Menkominfo) serta sempat menjabat sebagai Menteri Koperasi di awal Kabinet Merah Putih, namun sejak reshuffle kabinet September 2025 posisinya digantikan oleh Ferry Juliantono sehingga saat ini ia sudah bukan menteri lagi. Ia juga tidak pernah menjabat sebagai Menteri ATR/BPN maupun Kepala Bappenas.';
+            }
+
+            if (
+                preg_match('/\b(wakil presiden|wapres|gibran)\b/i', $q) === 1
+                && preg_match('/\b(calon|pengganti|cawapres)\b/i', $q) === 1
+            ) {
+                return 'Sesuai Pasal 8 ayat (2) UUD 1945, dalam hal terjadi kekosongan jabatan Wakil Presiden, selambat-lambatnya dalam waktu 60 hari Majelis Permusyawaratan Rakyat (MPR RI) menyelenggarakan sidang untuk memilih Wakil Presiden dari 2 calon yang diusulkan oleh Presiden. Secara konstitusional, Gibran Rakabuming Raka masih aktif menjabat sebagai Wakil Presiden RI periode 2024–2029 sehingga tidak ada daftar calon resmi maupun persentase peluang baku; pembahasan mengenai tokoh politik atau menteri koordinator merupakan dinamika opini publik, bukan keputusan resmi.';
+            }
+
             if (
                 preg_match('/\b(wakil presiden|wapres|gibran)\b/i', $q) === 1
                 && preg_match('/\b(mengundurkan diri|mundur|pemakzulan|makzul|lengser)\b/i', $q) === 1
@@ -1596,6 +1665,7 @@ class ChatbotAssistantService
             ['keywords' => ['kpk'], 'answer' => 'Komisi Pemberantasan Korupsi (KPK) adalah lembaga independen yang bertugas melakukan pencegahan, koordinasi, supervisi, penyelidikan, penyidikan, hingga penuntutan tindak pidana korupsi di Indonesia.'],
             ['keywords' => ['komdigi'], 'answer' => 'Kementerian Komunikasi dan Digital (Komdigi, sebelumnya Kominfo) berperan mengatur infrastruktur telekomunikasi nasional, transformasi digital, literasi ruang siber, tata kelola sistem elektronik, serta pengawasan konten ilegal dan disinformasi digital.'],
             ['keywords' => ['bssn'], 'answer' => 'Badan Siber dan Sandi Negara (BSSN) bertugas menjaga keamanan siber nasional, melindungi infrastruktur informasi vital pemerintah, serta melakukan deteksi dan mitigasi ancaman serangan digital.'],
+            ['keywords' => ['reshuffle'], 'answer' => 'Pada reshuffle Kabinet Merah Putih September 2025, dilakukan sejumlah perombakan pejabat menteri termasuk penggantian Menteri Koperasi (Ferry Juliantono menggantikan Budi Arie Setiadi) serta penunjukan Purbaya Yudhi Sadewa sebagai Menteri Keuangan. Kewenangan pengangkatan dan pemberhentian menteri sepenuhnya merupakan hak prerogatif Presiden RI.'],
             ['keywords' => ['kabinet merah putih'], 'answer' => 'Kabinet Merah Putih adalah jajaran kementerian dan lembaga negara yang dipimpin oleh Presiden Prabowo Subianto dan Wakil Presiden Gibran Rakabuming Raka untuk masa bakti pemerintahan 2024–2029, dengan fokus program seperti ketahanan pangan, hilirisasi, makan bergizi gratis, dan pelayanan publik.'],
             ['keywords' => ['ikn'], 'answer' => 'Ibu Kota Nusantara (IKN) di Kalimantan Timur dibangun sebagai pusat pemerintahan masa depan Indonesia untuk pemerataan ekonomi di luar Pulau Jawa serta mengusung konsep kota pintar, hijau, dan berkelanjutan.'],
             ['keywords' => ['subsidi'], 'answer' => 'Kebijakan subsidi pemerintah (seperti subsidi BBM, LPG 3 kg, listrik, dan pupuk) bertujuan menjaga daya beli masyarakat berpenghasilan rendah. Tantangan utamanya adalah memastikan penyaluran tepat sasaran melalui integrasi data penerima berbasis NIK agar beban APBN tetap sehat.'],

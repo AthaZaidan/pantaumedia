@@ -581,5 +581,37 @@ XML;
             'history' => $offlineContextHistory,
         ])->assertStatus(200)->json('reply');
         $this->assertStringNotContainsString('koneksi ke layanan AI eksternal saat ini belum aktif dari server', $lahReply);
+
+        $budiArieHistory = [
+            ['role' => 'user', 'content' => 'bisa kamu prediksi calon pengganti wakil presiden kita'],
+            ['role' => 'assistant', 'content' => '1. Mahendra Siregar ... 5. Budi Arie Setiadi - Menteri Agraria'],
+        ];
+
+        $this->assertSame(
+            'bukannya budi arie sudah bukan menteri',
+            $assistant->resolveContextualMessage('bukannya budi arie sudah bukan menteri', $budiArieHistory)
+        );
+        $this->assertSame(
+            'kenapa kamu menyebut budi arie tadi',
+            $assistant->resolveContextualMessage('kenapa kamu menyebut budi arie tadi', $budiArieHistory)
+        );
+
+        $budiCorrectionReply = (string) $this->postJson('/api/chatbot/ask', [
+            'message' => 'bukannya budi arie sudah bukan menteri',
+            'history' => $budiArieHistory,
+        ])->assertStatus(200)->json('reply');
+        $this->assertStringContainsString('bukan menteri', strtolower($budiCorrectionReply));
+        $this->assertStringContainsString('Ferry Juliantono', $budiCorrectionReply);
+        $this->assertStringContainsString('tidak pernah menjabat sebagai Menteri ATR/BPN', $budiCorrectionReply);
+
+        $budiWhyReply = (string) $this->postJson('/api/chatbot/ask', [
+            'message' => 'kenapa kamu menyebut budi arie tadi',
+            'history' => array_merge($budiArieHistory, [
+                ['role' => 'user', 'content' => 'bukannya budi arie sudah bukan menteri'],
+                ['role' => 'assistant', 'content' => $budiCorrectionReply],
+            ]),
+        ])->assertStatus(200)->json('reply');
+        $this->assertStringContainsString('bukan menteri', strtolower($budiWhyReply));
+        $this->assertStringNotContainsString('Mahendra Siregar', $budiWhyReply);
     }
 }
