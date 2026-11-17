@@ -77,10 +77,12 @@ class SospemController extends Controller
     {
         $rawPlatforms = is_array($issue->platforms) ? $issue->platforms : [];
         $platformOrder = [
-            'x' => 'X & Threads',
+            'x' => 'X (Twitter)',
+            'threads' => 'Threads',
             'meta' => 'Meta (IG & FB)',
             'news' => 'Berita & Media',
-            'tiktok' => 'TikTok & YouTube',
+            'tiktok' => 'TikTok',
+            'youtube' => 'YouTube',
         ];
 
         $orderedPlatforms = [];
@@ -2029,66 +2031,90 @@ class SospemController extends Controller
     /**
      * Mesin scraping mandiri di server website saat worker lokal/JupyterHub sedang offline.
      */
-    private function runStandaloneHostingerScrape(string $topic, string $slug, int $limit, ?Issue $issue, PostAnalyzerService $analyzer): int
+    private function runStandaloneHostingerScrape(string $topic, string $slug, int $limit, $issue, PostAnalyzerService $analyzer): int
     {
+        @set_time_limit(180);
         $inserted = 0;
+
         $sources = [
-            ['query' => "{$topic} indonesia", 'prefix' => 'news_', 'platform' => 'news', 'default_user' => null],
-            ['query' => "{$topic} site:youtube.com", 'prefix' => 'yt_', 'platform' => 'youtube', 'default_user' => 'YouTube Public Channel'],
+            'news_main' => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' indonesia') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'news', 'prefix' => 'news_', 'label' => 'Portal Berita', 'cap' => max(6, (int) ceil($limit * 0.40))],
+            'youtube'   => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' site:youtube.com') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'youtube', 'prefix' => 'yt_', 'label' => 'Kanal YouTube', 'cap' => max(3, (int) ceil($limit * 0.15))],
+            'tiktok'    => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' site:tiktok.com') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'tiktok', 'prefix' => 'tt_', 'label' => 'Kreator TikTok', 'cap' => max(3, (int) ceil($limit * 0.15))],
+            'x_buzz'    => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' (twitter OR netizen OR viral)') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'x', 'prefix' => 'x_', 'label' => 'Warga X', 'cap' => max(3, (int) ceil($limit * 0.15))],
+            'meta_buzz' => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' (instagram OR facebook)') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'meta', 'prefix' => 'ig_', 'label' => 'Warga Meta (IG/FB)', 'cap' => max(2, (int) ceil($limit * 0.10))],
+            'th_buzz'   => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic . ' (threads OR "media sosial")') . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'threads', 'prefix' => 'th_', 'label' => 'Warga Threads', 'cap' => max(2, (int) ceil($limit * 0.10))],
+            'news_fall' => ['url' => 'https://news.google.com/rss/search?q=' . urlencode($topic) . '&hl=id&gl=ID&ceid=ID:id', 'platform' => 'news', 'prefix' => 'newsf_', 'label' => 'Media Nasional', 'cap' => $limit],
         ];
 
-        foreach ($sources as $src) {
-            if ($inserted >= $limit) {
-                break;
+        $responses = \Illuminate\Support\Facades\Http::pool(function ($pool) use ($sources) {
+            foreach ($sources as $key => $cfg) {
+                $pool->as($key)
+                    ->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)'])
+                    ->timeout(5)
+                    ->get($cfg['url']);
             }
+        });
 
-            try {
-                $rssUrl = 'https://news.google.com/rss/search?q='.urlencode($src['query']).'&hl=id&gl=ID&ceid=ID:id';
-                $rssResp = Http::withoutVerifying()
-                    ->withHeaders([
-                        'User-Agent' => 'Mozilla/5.0 (compatible; SospemBot/1.0)',
-                    ])->timeout(10)->get($rssUrl);
-
-                if (! $rssResp->successful()) {
-                    continue;
-                }
-
-                $xml = @simplexml_load_string($rssResp->body());
-                if (! $xml || ! isset($xml->channel->item)) {
-                    continue;
-                }
-
-                foreach ($xml->channel->item as $item) {
-                    if ($inserted >= $limit) {
-                        break;
+        $buckets = [];
+        foreach ($sources as $key => $cfg) {
+            $buckets[$key] = [];
+            $resp = $responses[$key] ?? null;
+            if ($resp instanceof \Illuminate\Http\Client\Response && $resp->successful()) {
+                $xml = @simplexml_load_string($resp->body());
+                if ($xml && isset($xml->channel->item)) {
+                    foreach ($xml->channel->item as $item) {
+                        if (count($buckets[$key]) >= $cfg['cap']) {
+                            break;
+                        }
+                        $title = trim((string) $item->title);
+                        $link = trim((string) $item->link);
+                        if ($title === '') {
+                            continue;
+                        }
+                        $commentId = $cfg['prefix'] . md5($link !== '' ? $link : $title);
+                        if (\App\Models\SocialPost::where('comment_id', $commentId)->exists()) {
+                            continue;
+                        }
+                        $buckets[$key][] = [
+                            'comment_id' => $commentId,
+                            'platform' => $cfg['platform'],
+                            'username' => isset($item->source) ? trim((string) $item->source) : $cfg['label'],
+                            'content' => $title,
+                            'source_news' => $link,
+                            'timestamp' => trim((string) $item->pubDate) !== '' ? date('Y-m-d H:i:s', strtotime((string) $item->pubDate)) : now()->toDateTimeString(),
+                        ];
                     }
+                }
+            }
+        }
 
-                    $title = trim((string) $item->title);
-                    if ($title === '') {
-                        continue;
-                    }
-
-                    $link = trim((string) $item->link);
-                    $pubDate = trim((string) $item->pubDate);
-                    $sourceName = $src['default_user'] ?? (isset($item->source) ? trim((string) $item->source) : 'Google News');
-                    $handleSlug = $src['default_user'] !== null ? 'youtube_id' : Str::slug($sourceName, '_');
-
-                    $analyzer->ingestAndAnalyze($issue, [
-                        'comment_id' => $src['prefix'].md5($link !== '' ? $link : $title),
+        $hasMore = true;
+        while ($inserted < $limit && $hasMore) {
+            $hasMore = false;
+            foreach ($buckets as $key => &$items) {
+                if ($inserted >= $limit) {
+                    break;
+                }
+                if (! empty($items)) {
+                    $hasMore = true;
+                    $row = array_shift($items);
+                    $post = $analyzer->ingestAndAnalyze($issue, [
+                        'comment_id' => $row['comment_id'],
                         'issue_slug' => $slug,
                         'issue_title' => $topic,
-                        'platform' => $src['platform'],
-                        'username' => $sourceName,
-                        'handle' => '@'.($handleSlug !== '' ? $handleSlug : 'warga_net'),
-                        'content' => $title,
-                        'source_news' => $link,
-                        'timestamp' => $pubDate !== '' ? date('Y-m-d H:i:s', strtotime($pubDate) ?: time()) : now()->toDateTimeString(),
+                        'platform' => $row['platform'],
+                        'username' => $row['username'],
+                        'handle' => '@' . Str::slug($row['username'], '_'),
+                        'content' => $row['content'],
+                        'source_news' => $row['source_news'],
+                        'timestamp' => $row['timestamp'],
                     ]);
-                    $inserted++;
+                    if ($post) {
+                        $inserted++;
+                    }
                 }
-            } catch (Throwable) {
-                // Lanjut ke sumber berikutnya jika RSS gagal
             }
+            unset($items);
         }
 
         return $inserted;

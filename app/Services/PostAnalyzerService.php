@@ -312,8 +312,16 @@ class PostAnalyzerService
             return 'meta';
         }
 
-        if (in_array($lower, ['tiktok', 'youtube', 'yt', 'tt'], true)) {
+        if (in_array($lower, ['tiktok', 'tt'], true)) {
             return 'tiktok';
+        }
+
+        if (in_array($lower, ['youtube', 'yt'], true)) {
+            return 'youtube';
+        }
+
+        if ($lower === 'threads') {
+            return 'threads';
         }
 
         return 'x';
@@ -466,8 +474,10 @@ class PostAnalyzerService
         // 3. Sinkronkan / perbarui profil akun di tabel monitored_accounts PostgreSQL
         $platformLabel = match ($platform) {
             'meta' => 'Meta (IG & FB)',
+            'threads' => 'Threads',
             'news' => 'Berita & Media',
-            'tiktok' => 'TikTok & YouTube',
+            'tiktok' => 'TikTok',
+            'youtube' => 'YouTube',
             default => 'X (Twitter)',
         };
 
@@ -621,10 +631,12 @@ class PostAnalyzerService
         $negPct = $total > 0 ? round(100 - $posPct, 1) : 0.0;
 
         $platformNames = [
-            'x' => 'X & Threads',
+            'x' => 'X (Twitter)',
+            'threads' => 'Threads',
             'meta' => 'Meta (IG & FB)',
             'news' => 'Berita & Media',
-            'tiktok' => 'TikTok & YouTube',
+            'tiktok' => 'TikTok',
+            'youtube' => 'YouTube',
         ];
 
         $platformsData = [];
